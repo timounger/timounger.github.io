@@ -1,0 +1,92 @@
+---
+#------------------------------------------------------------------------------
+# Central GitHub CI
+# Doc: https://docs.github.com/de/actions
+#------------------------------------------------------------------------------
+name: My CI
+
+#------------------------------------------------------------------------------
+# Token Permission
+#------------------------------------------------------------------------------
+permissions:
+  actions: write
+  checks: none
+  contents: write
+  deployments: none
+  id-token: none
+  issues: none
+  discussions: none
+  packages: none
+  pages: write
+  pull-requests: write
+  repository-projects: none
+  security-events: none
+  statuses: none
+
+defaults:
+  run:
+    shell: cmd
+
+env:
+  PYTHON_VERSION: 3.11.5
+  PYTHON_ARCH: x64
+  PYTHON_PACKAGE_INST_PATH: ./Documentation/Installation
+  PYTHON_PACKAGE_INST_FILE: install_packages.bat
+  DOXYGEN_OUTPUT_NAME: Output_Doxygen
+  DOXYGEN_OUTPUT_PATH: ./Documentation/DoxygenCreator/Output_Doxygen
+
+#--------------------------------------------------------------------------------
+# WORKFLOW TRIGGER
+#--------------------------------------------------------------------------------
+on:
+  push:
+    branches:
+      - working
+  workflow_dispatch:
+
+#--------------------------------------------------------------------------------
+# WORKFLOW JOBS
+#--------------------------------------------------------------------------------
+jobs:
+  doc-Doxygen:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          architecture: ${{ env.PYTHON_ARCH }}
+      - name: Install Graphviz
+        run: choco install graphviz
+      - name: Install Packages
+        working-directory: ${{ env.PYTHON_PACKAGE_INST_PATH }}
+        run: ${{ env.PYTHON_PACKAGE_INST_FILE }}
+      - name: Run Doxygen
+        working-directory: ./Documentation/DoxygenCreator
+        run: python doxygen_creator.py
+      - name: Upload Doxygen Output
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ env.DOXYGEN_OUTPUT_NAME }}
+          path: ${{ env.DOXYGEN_OUTPUT_PATH }}
+  #------------------------------------------------------------------------------
+  doc-Pages:
+    needs: doc-Doxygen
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Download Doxygen Output
+        uses: actions/download-artifact@v3
+        with:
+          name: ${{ env.DOXYGEN_OUTPUT_NAME }}
+          path: ${{ env.DOXYGEN_OUTPUT_PATH }}
+      - name: Deploy to Github Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ${{ env.DOXYGEN_OUTPUT_PATH }}/html
