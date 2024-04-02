@@ -17,6 +17,8 @@ Stets auf dem neuesten Stand der Technik, verfolge ich aktuelle Trends und Techn
 - Nutzerautentifizierung per Chip
 - optional: Kartenzahlungsgerät, Pfandsystem
 
+Angebot und Lieferung nur im Kreis Esslingen und nähere Umgebung.
+
 Anfragen an: bonprinter@gmx.de
 
 <!---
