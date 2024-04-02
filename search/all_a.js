@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['zimpressum_2emd_0',['zImpressum.md',['../z_impressum_8md.html',1,'']]]
+  ['§5_20tmg_0',['Anbieter im Sinne des §5 TMG',['../_impressum.html#autotoc_md5',1,'']]]
 ];
