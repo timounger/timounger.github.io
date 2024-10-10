@@ -2,5 +2,5 @@
 cd ..
 cd Documentation/DoxygenCreator
 rmdir /s/q "Output_Doxygen"
-python doxygen_creator.py -o True
-#pause
+..\..\.env\Scripts\python create_doxygen.py -o True
+::pause

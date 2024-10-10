@@ -2,36 +2,26 @@
 
 \tableofcontents
 
-## Über mich
+## Wertmarkendrucker mieten für Ihr Event!
 
-Hallo, mein Name ist Timo Unger und ich bin Softwareentwickler mit einer besonderen Leidenschaft für die Automatisierung von Prozessen.
-Mit fundierten Kenntnissen in der Entwicklung von Softwarelösungen, sowohl im Frontend als auch im Backend, setze ich meine Fähigkeiten ein, um innovative und benutzerfreundliche Anwendungen zu entwickeln.
-Stets auf dem neuesten Stand der Technik, verfolge ich aktuelle Trends und Technologien, um mein Fachwissen kontinuierlich zu erweitern.
+![](Documentation/img/bonprinterbox_front.png)
+![](Documentation/img/bonprinterbox_rear.png)
 
-## Dienstleistungen
+Highlights:
 
-### Verleih von Wertmarkendruckern
+- Wertmarken drucken mit individuellem Design
+- Verkaufspreisberechnung mit Kundenanzeige
+- Rückgeldrechner
+- Pfandsystem
+- Benutzerauthentifizierung
+- Bedienungsmodus
+- sumup Kartenterminal
 
-- Wertmarken drucken
-- Preise berechnen
-- Nutzerautentifizierung per Chip
-- optional: Kartenzahlungsgerät, Pfandsystem
+Kontakt:  
+Timo Unger  
+Nordring 16  
+73269 Hochdorf  
+Mobil: +49 171 8431465  
+E-Mail: bonprinter@gmx.de  
 
-Angebot und Lieferung nur im Kreis Esslingen und nähere Umgebung.
-
-Anfragen an: bonprinter@gmx.de
-
-<!---
-### Bereitstellung von Buchhaltungsprogrammen
-
-- Erstellen von Rechnungen (E-Rechnung im ZUGfERD Format)
-- Ein- und Ausgaben archivieren
-- Umsatzsteuervoranmeldung mit XML Export für Elster
-- Einnahmen-Überschussrechnung (EÜR)
-- Export
-- Dezentrale Versionierung der Daten
--->
-
-### Individuelle Softwarelösungen
-
-Weitere PC-basierte Softwarelösungen auf Anfrage
+Anfragen gerne per WhatsApp!
