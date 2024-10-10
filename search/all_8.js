@@ -1,5 +1,4 @@
 var searchData=
 [
-  ['wertmarkendruckern_0',['Verleih von Wertmarkendruckern',['../index.html#autotoc_md2',1,'']]],
-  ['willkommen_1',['Willkommen',['../index.html',1,'']]]
+  ['tmg_0',['Anbieter im Sinne des §5 TMG',['../_impressum.html#autotoc_md1',1,'']]]
 ];

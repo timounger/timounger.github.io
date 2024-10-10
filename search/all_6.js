@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['tmg_0',['Anbieter im Sinne des §5 TMG',['../_impressum.html#autotoc_md5',1,'']]]
+  ['readme_2emd_0',['README.md',['../_r_e_a_d_m_e_8md.html',1,'']]]
 ];

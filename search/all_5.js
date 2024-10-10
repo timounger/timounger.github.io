@@ -1,5 +1,5 @@
 var searchData=
 [
-  ['sinne_20des_20§5_20tmg_0',['Anbieter im Sinne des §5 TMG',['../_impressum.html#autotoc_md5',1,'']]],
-  ['softwarelösungen_1',['Individuelle Softwarelösungen',['../index.html#autotoc_md4',1,'']]]
+  ['mich_0',['Über mich',['../_about.html',1,'']]],
+  ['mieten_20für_20ihr_20event_1',['Wertmarkendrucker mieten für Ihr Event!',['../index.html#autotoc_md0',1,'']]]
 ];

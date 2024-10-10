@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['über_20mich_0',['Über mich',['../index.html#autotoc_md0',1,'']]]
+  ['§5_20tmg_0',['Anbieter im Sinne des §5 TMG',['../_impressum.html#autotoc_md1',1,'']]]
 ];
