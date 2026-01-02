@@ -1,0 +1,40 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "name": "BonPrinter - API-Dokumentation",
+  "entryPoints": ["features/pos-demo"],
+  "entryPointStrategy": "expand",
+  "out": "docs/api",
+  "readme": "features/pos-demo/README.md",
+  "exclude": ["**/node_modules/**", "**/*.test.ts", "**/*.test.tsx"],
+  "excludeExternals": true,
+  "excludeInternal": true,
+  "intentionallyNotExported": ["SOUND_SRC"],
+  "skipErrorChecking": true,
+  "plugin": ["typedoc-material-theme"],
+  "themeColor": "#1565d0",
+  "hideGenerator": true,
+  "searchInComments": true,
+  "navigationLinks": {
+    "Website": "https://timounger.github.io"
+  },
+  "darkHighlightTheme": "github-dark",
+  "lightHighlightTheme": "github-light",
+  "highlightLanguages": [
+    "bash",
+    "console",
+    "css",
+    "html",
+    "javascript",
+    "json",
+    "jsonc",
+    "tsx",
+    "typescript",
+    "ini",
+    "text"
+  ],
+  "validation": {
+    "notDocumented": true,
+    "invalidLink": true,
+    "notExported": true
+  }
+}

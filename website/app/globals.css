@@ -1,0 +1,129 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply antialiased;
+  }
+}
+
+/* Animierter Hintergrund - schwebende Icons */
+@keyframes float-a {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  50% {
+    transform: translate(20px, -34px) rotate(10deg);
+  }
+}
+@keyframes float-b {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  50% {
+    transform: translate(-24px, 28px) rotate(-12deg);
+  }
+}
+@keyframes float-c {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  33% {
+    transform: translate(-18px, -22px) rotate(-6deg);
+  }
+  66% {
+    transform: translate(22px, 16px) rotate(8deg);
+  }
+}
+
+@layer utilities {
+  .anim-float-a {
+    animation: float-a 19s ease-in-out infinite;
+  }
+  .anim-float-b {
+    animation: float-b 24s ease-in-out infinite;
+  }
+  .anim-float-c {
+    animation: float-c 28s ease-in-out infinite;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-float-a,
+  .anim-float-b,
+  .anim-float-c {
+    animation: none;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-brand-600 px-5 py-3 font-medium text-white shadow-sm transition hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 dark:focus:ring-offset-slate-950;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-5 py-3 font-medium text-slate-900 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800 dark:focus:ring-offset-slate-950;
+  }
+  .container-page {
+    @apply mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8;
+  }
+}
+
+/* react-day-picker - Light Mode (Standardwerte feintunen) */
+.rdp-root {
+  --rdp-accent-color: theme("colors.brand.600");
+  --rdp-accent-background-color: theme("colors.brand.50");
+  --rdp-range_middle-color: theme("colors.brand.900");
+  --rdp-today-color: theme("colors.brand.600");
+}
+
+.rdp-day_button:hover:not([disabled]) {
+  background-color: theme("colors.brand.50");
+  border-radius: 9999px;
+}
+
+/* react-day-picker - Dark Mode */
+.dark .rdp-root {
+  color: theme("colors.slate.200");
+  --rdp-accent-color: theme("colors.brand.400");
+  --rdp-accent-background-color: theme("colors.brand.900");
+  --rdp-range_middle-color: theme("colors.slate.100");
+  --rdp-range_start-color: white;
+  --rdp-range_end-color: white;
+  --rdp-today-color: theme("colors.brand.300");
+}
+
+.dark .rdp-day_button:hover:not([disabled]) {
+  background-color: theme("colors.slate.700");
+  border-radius: 9999px;
+}
+
+.dark .rdp-weekday {
+  color: theme("colors.slate.400");
+}
+
+.dark .rdp-month_caption,
+.dark .rdp-button_previous,
+.dark .rdp-button_next {
+  color: theme("colors.slate.100");
+}
+
+.dark .rdp-button_previous:hover:not([disabled]),
+.dark .rdp-button_next:hover:not([disabled]) {
+  background-color: theme("colors.slate.700");
+  border-radius: 9999px;
+}
+
+.dark .rdp-chevron {
+  fill: theme("colors.slate.300");
+}
+
+.dark .rdp-disabled {
+  color: theme("colors.slate.600");
+}

@@ -1,0 +1,3 @@
+# Pre-commit checks are disabled on request.
+# To re-enable automatic ESLint + Prettier on staged files, uncomment the line below:
+# cd website && npx lint-staged
