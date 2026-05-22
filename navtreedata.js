@@ -27,7 +27,7 @@ var NAVTREE =
   [ "Timo Unger", "index.html", [
     [ "Willkommen", "index.html", null ],
     [ "Über mich", "_about.html", null ],
-    [ "Datenschutz & Impressum ✉", "_impressum.html", null ]
+    [ "Datenschutz &amp; Impressum ✉", "_impressum.html", null ]
   ] ]
 ];
 
@@ -38,3 +38,4 @@ var NAVTREEINDEX =
 
 var SYNCONMSG = 'Klicken um Panelsynchronisation auszuschalten';
 var SYNCOFFMSG = 'Klicken um Panelsynchronisation einzuschalten';
+var LISTOFALLMEMBERS = 'Aufstellung aller Elemente';
