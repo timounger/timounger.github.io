@@ -19,7 +19,7 @@ import WhatsappFab from "./whatsapp-fab";
  */
 export default function SiteChrome({ children }: { children: React.ReactNode }): ReactElement {
   const pathname = usePathname();
-  const isFullscreen = pathname?.startsWith("/demo");
+  const isFullscreen = pathname?.startsWith("/demo") || pathname?.startsWith("/kiosk");
 
   if (isFullscreen) {
     return <>{children}</>;

@@ -26,6 +26,16 @@ export interface DeviceFrameProps {
   lang: Lang;
   /** Amount shown on the SumUp terminal (euro), taken over on card payment. */
   terminalAmount: number;
+  /** Whether a receipt is shown on the printer (only after something was printed). */
+  showBon: boolean;
+  /** First receipt header line shown on the printer (from articles.ini [Header]). */
+  bonHeader1: string;
+  /** Second receipt header line shown on the printer (from articles.ini [Header]). */
+  bonHeader2: string;
+  /** Article name shown on the printed receipt (last printed article). */
+  bonName: string;
+  /** Article price (euro) shown on the printed receipt (last printed article). */
+  bonPrice: number;
 }
 
 /** Torn-paper edge for the receipt hanging out of the printer. */
@@ -88,7 +98,16 @@ const WOOD_GRAIN_V = woodGrain(GRAIN_VERTICAL_DEG);
  *
  * @returns the framed device element
  */
-export function DeviceFrame({ children, lang, terminalAmount }: DeviceFrameProps): ReactElement {
+export function DeviceFrame({
+  children,
+  lang,
+  terminalAmount,
+  showBon,
+  bonHeader1,
+  bonHeader2,
+  bonName,
+  bonPrice,
+}: DeviceFrameProps): ReactElement {
   const t = T[lang];
   /** Terminal amount formatted like the SumUp display, e.g. "€ 25,50". */
   const terminalDisplay = `€ ${terminalAmount.toFixed(2).replace(".", ",")}`;
@@ -493,27 +512,31 @@ export function DeviceFrame({ children, lang, terminalAmount }: DeviceFrameProps
                 </div>
               </div>
 
-              {/* Receipt emerging from the slot, just below the visible tear teeth */}
-              <div
-                className="absolute left-[56%] top-[5.75rem] z-10 w-36 -translate-x-1/2 rotate-1 bg-white px-2.5 py-3 shadow-md"
-                style={{ clipPath: RECEIPT_TEAR }}
-              >
-                {/* The printer prints upside down, so the content is rotated 180 degrees */}
-                <div className="rotate-180 select-none text-zinc-800">
-                  {/* Header: black-and-white football spanning both title lines */}
-                  <div className="flex items-center justify-center gap-1.5">
-                    <span className="text-2xl grayscale" aria-hidden>
-                      ⚽
-                    </span>
-                    <div className="leading-tight">
-                      <div className="text-[10px] font-semibold">FC Volltreffer</div>
-                      <div className="text-[8px]">Elfmeterturnier</div>
+              {/* Receipt emerging from the slot (only after something was printed) */}
+              {showBon && (
+                <div
+                  className="absolute left-[56%] top-[5.75rem] z-10 w-36 -translate-x-1/2 rotate-1 bg-white px-2.5 py-3 shadow-md"
+                  style={{ clipPath: RECEIPT_TEAR }}
+                >
+                  {/* The printer prints upside down, so the content is rotated 180 degrees */}
+                  <div className="rotate-180 select-none text-zinc-800">
+                    {/* Header: black-and-white football spanning both title lines */}
+                    <div className="flex items-center justify-center gap-1.5">
+                      <span className="text-2xl grayscale" aria-hidden>
+                        ⚽
+                      </span>
+                      <div className="leading-tight">
+                        {bonHeader1 && <div className="text-[10px] font-semibold">{bonHeader1}</div>}
+                        {bonHeader2 && <div className="text-[8px]">{bonHeader2}</div>}
+                      </div>
                     </div>
+                    <div className="mt-2.5 overflow-hidden whitespace-nowrap text-[18px] font-bold leading-tight">
+                      {bonName}
+                    </div>
+                    <div className="text-right text-[11px] leading-tight">EUR {bonPrice.toFixed(2)}</div>
                   </div>
-                  <div className="mt-2.5 text-[18px] font-bold leading-tight">Cola</div>
-                  <div className="text-right text-[11px] leading-tight">3.50 EUR</div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </div>

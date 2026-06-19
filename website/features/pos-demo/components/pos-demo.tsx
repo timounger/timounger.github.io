@@ -5,16 +5,17 @@
  */
 "use client";
 
-import { useCallback, useState, type ReactElement } from "react";
+import { useCallback, useMemo, useState, type ReactElement } from "react";
 import { T } from "../i18n/translations";
-import { DEFAULT_LANG, type ArticleGrid, type UserConfig } from "../types";
+import { parseArticleGrid } from "../lib/parse-articles";
+import { DEFAULT_LANG, type UserConfig } from "../types";
 import { BonPrinterApp, type PosContext } from "./bon-printer-app";
 import { DeviceFrame } from "./device-frame";
 
 /** Props for the {@link PosDemo} component. */
 export interface PosDemoProps {
-  /** Article grid, loaded from articles.ini by the page at build time. */
-  articles: ArticleGrid;
+  /** Raw article config text (articles.ini), loaded by the page at build time. */
+  articleText: string;
   /** Login users, loaded from user.ini by the page at build time. */
   users: UserConfig;
 }
@@ -25,23 +26,39 @@ export interface PosDemoProps {
  *
  * @returns the demo page element
  */
-export default function PosDemo({ articles, users }: PosDemoProps): ReactElement {
+export default function PosDemo({ articleText, users }: PosDemoProps): ReactElement {
   const [ctx, setCtx] = useState<PosContext>({
     loggedOut: false,
     lang: DEFAULT_LANG,
     demoDark: false,
     terminalAmount: 0,
+    lastBon: null,
   });
   /** Receives the latest app context (login status, language, theme) from the app. */
   const handleContext = useCallback((c: PosContext) => setCtx(c), []);
 
-  const { loggedOut, lang, demoDark, terminalAmount } = ctx;
+  const { loggedOut, lang, demoDark, terminalAmount, lastBon } = ctx;
   const t = T[lang];
+
+  // Receipt header lines (from articles.ini [Header]); the name + price come from
+  // the last printed bon (nothing is shown until something has been printed).
+  const header = useMemo(() => {
+    const articles = parseArticleGrid(articleText);
+    return { header1: articles.header1, header2: articles.header2 };
+  }, [articleText]);
 
   return (
     <div className={`space-y-4 ${demoDark ? "pos-dark" : "pos-light"}`}>
-      <DeviceFrame lang={lang} terminalAmount={terminalAmount}>
-        <BonPrinterApp articles={articles} users={users} onContext={handleContext} />
+      <DeviceFrame
+        lang={lang}
+        terminalAmount={terminalAmount}
+        showBon={lastBon !== null}
+        bonHeader1={header.header1}
+        bonHeader2={header.header2}
+        bonName={lastBon?.name ?? ""}
+        bonPrice={lastBon?.price ?? 0}
+      >
+        <BonPrinterApp articleText={articleText} users={users} onContext={handleContext} />
       </DeviceFrame>
 
       {/* Description below the window - depends on login status and language */}

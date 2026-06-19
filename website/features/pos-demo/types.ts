@@ -30,6 +30,16 @@ export type ArticleGrid = {
   rows: number;
   /** Number of grid columns. */
   cols: number;
+  /** First receipt header line ([Header] header1), printed centered atop every bon. */
+  header1: string;
+  /** Second receipt header line ([Header] header2), printed centered atop every bon. */
+  header2: string;
+  /** [Tax] ec: when true, the clear key becomes an EC payment key after printing. */
+  ec: boolean;
+  /** [Prints] print_article (default true): whether article bons are printed at all. */
+  printArticle: boolean;
+  /** [Prints] print_free_price (default true): whether Free-user bons show the price. */
+  printFreePrice: boolean;
 };
 
 /** One line of the current order: article, unit price, quantity and tax group. */
@@ -72,14 +82,14 @@ export type LoginCell =
       id: "Admin" | "Host" | "Free" | "Local" | "SmartCard";
     };
 
-/** Supported UI languages (single source of truth for the {@link Lang} type). */
-export const LANGUAGES = ["Deutsch", "English"] as const;
+/** Supported UI languages (menu order: English first, then German). */
+export const LANGUAGES = ["English", "Deutsch"] as const;
 
 /** Supported UI language. */
 export type Lang = (typeof LANGUAGES)[number];
 
-/** Default UI language used on first render. */
-export const DEFAULT_LANG: Lang = LANGUAGES[0];
+/** Default UI language used on first render (German, despite the menu order). */
+export const DEFAULT_LANG: Lang = "Deutsch";
 
 /** A single user's login configuration from user.ini. */
 export type User = {
@@ -87,6 +97,8 @@ export type User = {
   name?: string;
   /** Password: empty = direct login, all digits = numeric PIN, otherwise locked. */
   pw?: string;
+  /** Optional RFID/NFC card UIDs that log this user in. */
+  uid?: string[];
 };
 
 /** Login users keyed by their section name in user.ini (e.g. "Admin", "B1"). */

@@ -3,12 +3,18 @@
 *.claude
 CLAUDE.md
 
+# Python
+__pycache__/
+*.pyc
+
 # website
 website/node_modules
 website/.next
 website/out
 website/build
 website/dist
+website/dist-app
+website/electron/bin
 website/.env*.local
 website/.env
 website/.vercel

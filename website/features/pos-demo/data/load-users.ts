@@ -14,7 +14,31 @@ const INI_PATH = path.join(process.cwd(), "features", "pos-demo", "data", "user.
 const INI_KEY = {
   name: "name",
   pw: "pw",
+  uid: "uid",
 } as const;
+
+/**
+ * Parses the `uid` value (a JSON-style list of RFID UIDs) into a string array.
+ * Falls back to a lenient comma/semicolon split when it is not valid JSON.
+ *
+ * @param value - the raw uid value, e.g. `["9B 96 31 16", "C1 BF E7 F4"]`
+ * @returns the parsed UID list (empty when nothing usable is found)
+ */
+function parseUids(value: string): string[] {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (Array.isArray(parsed)) {
+      return parsed.map((u) => String(u).trim()).filter((u) => u !== "");
+    }
+  } catch {
+    // not JSON - fall through to a lenient split
+  }
+  return value
+    .replace(/^\[|\]$/g, "")
+    .split(/[,;]/)
+    .map((u) => u.replace(/["']/g, "").trim())
+    .filter((u) => u !== "");
+}
 
 /**
  * Reads user.ini into a map of user key to its name and password.
@@ -70,6 +94,11 @@ function applyEntry(user: User, line: string): void {
       case INI_KEY.pw:
         if (value) user.pw = value;
         break;
+      case INI_KEY.uid: {
+        const uids = parseUids(value);
+        if (uids.length > 0) user.uid = uids;
+        break;
+      }
     }
   }
 }

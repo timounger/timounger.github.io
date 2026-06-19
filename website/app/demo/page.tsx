@@ -6,7 +6,7 @@
 
 import ThemeToggle from "@/components/theme/theme-toggle";
 import { PosDemo } from "@/features/pos-demo";
-import { loadArticleGrid } from "@/features/pos-demo/data/load-articles";
+import { loadArticleText } from "@/features/pos-demo/data/load-articles";
 import { loadUsers } from "@/features/pos-demo/data/load-users";
 import { X } from "lucide-react";
 import type { Metadata } from "next";
@@ -31,7 +31,7 @@ export const metadata: Metadata = {
  * and the interactive POS demo loaded with the article grid.
  */
 export default function DemoPage(): ReactElement {
-  const articles = loadArticleGrid();
+  const articleText = loadArticleText();
   const users = loadUsers();
   return (
     <div className="fixed inset-0 z-30 flex flex-col bg-slate-100 dark:bg-slate-950">
@@ -54,7 +54,7 @@ export default function DemoPage(): ReactElement {
       </header>
       <div className="flex-1 overflow-y-auto overflow-x-clip">
         <div className="mx-auto max-w-[1000px] px-4 py-6">
-          <PosDemo articles={articles} users={users} />
+          <PosDemo articleText={articleText} users={users} />
         </div>
       </div>
     </div>

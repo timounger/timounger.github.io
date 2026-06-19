@@ -1,0 +1,21 @@
+appId: de.iap-it.bonprinter
+productName: BonPrinter
+# Bundle the Electron glue plus the static Next export (the bundled bridges are
+# shipped as extra resources, not inside the asar).
+files:
+  - electron/**
+  - "!electron/bin/**"
+  - out/**
+  - package.json
+extraResources:
+  - from: electron/bin/nfc_bridge.exe
+    to: nfc_bridge.exe
+  - from: electron/bin/printer_bridge.exe
+    to: printer_bridge.exe
+directories:
+  output: dist-app
+win:
+  target: portable
+  icon: electron/icon.ico
+portable:
+  artifactName: BonPrinter.exe

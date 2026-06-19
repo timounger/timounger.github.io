@@ -7,23 +7,27 @@
 
 import { ChevronRight, RotateCcw } from "lucide-react";
 import { useTheme } from "next-themes";
-import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { LOGIN } from "../data/login";
 import { numpadCells } from "../data/numpad";
 import { T } from "../i18n/translations";
+import { readSetting, writeSetting } from "../lib/app-settings";
 import { euro } from "../lib/euro";
 import { buildArticleRank, gridNumberAt, sortByGrid } from "../lib/grid-sort";
 import { multiline } from "../lib/multiline";
+import { parseArticleGrid } from "../lib/parse-articles";
 import { playSound, type SoundName } from "../lib/sound";
+import { ArticleEditor } from "./article-editor";
 import { ConfigMenu } from "./config-menu";
 import { ExplorerWindow } from "./explorer-window";
 import { PrintPreview } from "./print-preview";
+import { useNfcLogin } from "./use-nfc-login";
+import { usePrinter } from "./use-printer";
 import { useWindowState } from "./window-context";
 import {
   DEFAULT_LANG,
   LANGUAGES,
   type Article,
-  type ArticleGrid,
   type Lang,
   type LoginCell,
   type NumpadMode,
@@ -39,6 +43,12 @@ const PAPER_START_M = 0.5;
 const PAPER_PER_ITEM_M = 0.04;
 /** Maximum number of items that can be printed in one go. */
 const MAX_PRINT_ITEMS = 50;
+/** Paper width (mm) for the narrow / wide receipt option, sent to the print bridge. */
+const PAPER_WIDTH_58 = 58;
+const PAPER_WIDTH_80 = 80;
+/** Receipt character width per paper size (matches the print bridge LINE_WIDTHS). */
+const LINE_WIDTH_58 = 34;
+const LINE_WIDTH_80 = 48;
 /** Maximum length of the numeric input field. */
 const NUM_INPUT_MAX_LEN = 8;
 /** Auto theme: hour (inclusive) from which daytime/light mode starts. */
@@ -59,6 +69,19 @@ const BUILD_TIME = process.env.NEXT_PUBLIC_BUILD_TIME ?? "dev";
 /** Short git commit hash of the build, injected via next.config. */
 const BUILD_COMMIT = process.env.NEXT_PUBLIC_GIT_COMMIT ?? "dev";
 
+/**
+ * Formats a date for the receipt header as "YYYY/MM/DD HH:MM:SS".
+ *
+ * @param date - the date to format
+ * @returns the formatted timestamp
+ */
+function formatBonDate(date: Date): string {
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  const ymd = `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())}`;
+  const hms = `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  return `${ymd} ${hms}`;
+}
+
 /** State of the running app that the demo page needs for its explanatory text. */
 export interface PosContext {
   /** Whether no user is currently logged in. */
@@ -69,16 +92,32 @@ export interface PosContext {
   demoDark: boolean;
   /** Amount sent to the card terminal (euro); 0 until card payment is triggered. */
   terminalAmount: number;
+  /** Last printed bon (name + price) to show on the device printer; null = none yet. */
+  lastBon: { name: string; price: number } | null;
 }
 
 /** Props for the {@link BonPrinterApp} component. */
 export interface BonPrinterAppProps {
-  /** Article grid, loaded from articles.ini. */
-  articles: ArticleGrid;
+  /** Raw article config text (articles.ini format); parsed and editable in-app. */
+  articleText: string;
   /** Login users, loaded from user.ini. */
   users: UserConfig;
   /** Called whenever the app's login status, language or theme changes. */
   onContext?: (ctx: PosContext) => void;
+  /** Hide the app's own title bar (used in the standalone desktop build, where
+   * the OS window already provides one). */
+  hideTitleBar?: boolean;
+  /** User logged in on first render; null starts logged out. Defaults to "Local". */
+  initialUser?: string | null;
+  /** Suppress the toast pop-ups (e.g. "Wertmarken gedruckt") - used in the
+   * standalone desktop build, where they are not wanted. */
+  hideToasts?: boolean;
+  /** Connect to the local printer bridge so printouts drive a real ESC/POS
+   * printer and the cash drawer (desktop build only). */
+  enablePrinter?: boolean;
+  /** Fill the parent: the app box fills the window, the menu bar stays constant
+   * (desktop style) and only the body stretches (desktop build only). */
+  fillMode?: boolean;
 }
 
 /**
@@ -87,10 +126,66 @@ export interface BonPrinterAppProps {
  *
  * @returns the app window element
  */
-export function BonPrinterApp({ articles, users, onContext }: BonPrinterAppProps): ReactElement {
+export function BonPrinterApp({
+  articleText: initialArticleText,
+  users,
+  onContext,
+  hideTitleBar,
+  initialUser = "Local",
+  hideToasts,
+  enablePrinter,
+  fillMode,
+}: BonPrinterAppProps): ReactElement {
+  // Article config as editable text; the grid is derived from it. In the desktop
+  // build it is loaded from / saved to the Windows registry (see the effect
+  // below); on the website it comes from articles.ini and edits stay in-session.
+  const [articleText, setArticleText] = useState(initialArticleText);
+  const articles = useMemo(() => parseArticleGrid(articleText), [articleText]);
   const { grid, rows, cols } = articles;
   const articleRank = useMemo(() => buildArticleRank(grid, rows, cols), [grid, rows, cols]);
-  const [user, setUser] = useState<string | null>("Local");
+  const [articleEditorOpen, setArticleEditorOpen] = useState(false);
+  useEffect(() => {
+    const stored = typeof window !== "undefined" ? window.bonprinterSettings?.getSync("CONFIGURATION", "ITEMS") : null;
+    if (stored) setArticleText(stored);
+  }, []);
+  /**
+   * Applies and persists an edited article config (registry in the desktop build).
+   *
+   * @param text - the new article config text
+   */
+  const saveArticles = useCallback((text: string) => {
+    setArticleText(text);
+    window.bonprinterSettings?.set("CONFIGURATION", "ITEMS", text);
+    setArticleEditorOpen(false);
+  }, []);
+  // Fill mode (desktop build): stretch only the body to fill the area below the
+  // constant menu bar, so the menu bar stays at its natural size (desktop style).
+  const bodyContainerRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [bodyScale, setBodyScale] = useState({ x: 1, y: 1 });
+  useEffect(() => {
+    if (!fillMode) return undefined;
+    const container = bodyContainerRef.current;
+    const body = bodyRef.current;
+    if (!container || !body) return undefined;
+    /** Recomputes the body X/Y scale so it fills the area below the menu bar. */
+    const update = () => {
+      const bodyWidth = body.offsetWidth;
+      const bodyHeight = body.offsetHeight;
+      if (bodyWidth === 0 || bodyHeight === 0) return;
+      setBodyScale({ x: container.clientWidth / bodyWidth, y: container.clientHeight / bodyHeight });
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(container);
+    observer.observe(body);
+    window.addEventListener("resize", update);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, [fillMode]);
+  const [user, setUser] = useState<string | null>(initialUser);
   const [order, setOrder] = useState<OrderLine[]>([]);
   const [multiplier, setMultiplier] = useState(1);
   const [toast, setToast] = useState<string | null>(null);
@@ -153,11 +248,104 @@ export function BonPrinterApp({ articles, users, onContext }: BonPrinterAppProps
   const [printReportActive, setPrintReportActive] = useState(true);
   // Admin toggle (off by default, decorative): "PC register" mode
   const [pcRegisterActive, setPcRegisterActive] = useState(false);
+  // Konfiguration menu: COM ports, paper width and the card/display peripherals.
+  // The printer port and paper width drive the real print bridge in the desktop
+  // build. All of these (plus the SETTINGS below) are persisted across restarts:
+  // Windows registry in the .exe (HKCU\Software\BON_WEB\BonPrinter, same keys as
+  // the reference project), localStorage on the website.
+  const [printerPort, setPrinterPort] = useState("None");
+  const [paperWidth, setPaperWidth] = useState("58 mm");
+  const [cardReader, setCardReader] = useState("None");
+  const [displayPort, setDisplayPort] = useState("None");
+  useEffect(() => {
+    /**
+     * Loads a stored string setting into state.
+     *
+     * @param section - registry section (e.g. "PRINTER")
+     * @param key - registry value name
+     * @param storageKey - localStorage fallback key
+     * @param apply - state setter to call with the stored value
+     */
+    const loadText = (section: string, key: string, storageKey: string, apply: (v: string) => void): void => {
+      const value = readSetting(section, key, storageKey);
+      if (value !== null) apply(value);
+    };
+    /**
+     * Loads a stored boolean setting into state ("true"/"false").
+     *
+     * @param key - registry value name (in the SETTINGS section)
+     * @param storageKey - localStorage fallback key
+     * @param apply - state setter to call with the parsed boolean
+     */
+    const loadBool = (key: string, storageKey: string, apply: (v: boolean) => void): void => {
+      const value = readSetting("SETTINGS", key, storageKey);
+      if (value !== null) apply(value === "true");
+    };
+    loadText("PRINTER", "com_port", "bonprinter-printer-port", setPrinterPort);
+    loadText("PRINTER", "paper_width", "bonprinter-paper-width", setPaperWidth);
+    loadText("PRINTER", "reader", "bonprinter-card-reader", setCardReader);
+    loadText("PRINTER", "display_port", "bonprinter-display-port", setDisplayPort);
+    loadBool("sound", "bonprinter-sound", setSoundOn);
+    loadBool("show_price", "bonprinter-show-price", setShowPrices);
+    loadBool("print_report", "bonprinter-print-report", setPrintReportActive);
+    loadBool("pos_mode", "bonprinter-pos-mode", setPcRegisterActive);
+    loadText("SETTINGS", "darkmode", "bonprinter-theme", setDemoTheme);
+    loadText("SETTINGS", "language", "bonprinter-language", (value) => {
+      if (value === "English" || value === "Deutsch") setDemoLang(value);
+    });
+  }, []);
+  const changePrinterPort = useCallback((value: string) => {
+    setPrinterPort(value);
+    writeSetting("PRINTER", "com_port", "bonprinter-printer-port", value);
+  }, []);
+  const changePaperWidth = useCallback((value: string) => {
+    setPaperWidth(value);
+    writeSetting("PRINTER", "paper_width", "bonprinter-paper-width", value);
+  }, []);
+  const changeCardReader = useCallback((value: string) => {
+    setCardReader(value);
+    writeSetting("PRINTER", "reader", "bonprinter-card-reader", value);
+  }, []);
+  const changeDisplayPort = useCallback((value: string) => {
+    setDisplayPort(value);
+    writeSetting("PRINTER", "display_port", "bonprinter-display-port", value);
+  }, []);
+  const changeSoundOn = useCallback((value: boolean) => {
+    setSoundOn(value);
+    writeSetting("SETTINGS", "sound", "bonprinter-sound", String(value));
+  }, []);
+  const changeShowPrices = useCallback((value: boolean) => {
+    setShowPrices(value);
+    writeSetting("SETTINGS", "show_price", "bonprinter-show-price", String(value));
+  }, []);
+  const changePrintReportActive = useCallback((value: boolean) => {
+    setPrintReportActive(value);
+    writeSetting("SETTINGS", "print_report", "bonprinter-print-report", String(value));
+  }, []);
+  const changePcRegisterActive = useCallback((value: boolean) => {
+    setPcRegisterActive(value);
+    writeSetting("SETTINGS", "pos_mode", "bonprinter-pos-mode", String(value));
+  }, []);
+  const changeDemoTheme = useCallback((value: string) => {
+    setDemoTheme(value);
+    writeSetting("SETTINGS", "darkmode", "bonprinter-theme", value);
+  }, []);
+  const changeDemoLang = useCallback((value: Lang) => {
+    setDemoLang(value);
+    writeSetting("SETTINGS", "language", "bonprinter-language", value);
+  }, []);
+  const printer = usePrinter(
+    !!enablePrinter,
+    printerPort === "None" ? null : printerPort,
+    paperWidth.startsWith("58") ? PAPER_WIDTH_58 : PAPER_WIDTH_80,
+  );
   const [reportMode, setReportMode] = useState(false);
   const [cardPayments, setCardPayments] = useState<Record<string, number>>({});
   const [cardPaidThisPrint, setCardPaidThisPrint] = useState(false);
   // amount sent to the card terminal (set on EC payment, reset with the session)
   const [terminalAmount, setTerminalAmount] = useState(0);
+  // last printed bon shown on the device printer (website demo); null until printed
+  const [lastBon, setLastBon] = useState<{ name: string; price: number } | null>(null);
   const { resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -181,8 +369,41 @@ export function BonPrinterApp({ articles, users, onContext }: BonPrinterAppProps
   const canReset = isAdmin || (loggedOut && pwUser === "Admin");
   const isOperator = !!user && /^B\d+$/.test(user);
 
+  // RFID/NFC login: map every configured card UID (normalized) to its user, and
+  // log that user in when the local NFC bridge reports a matching card.
+  const uidToUser = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const [key, cfg] of Object.entries(users)) {
+      for (const id of cfg.uid ?? []) map.set(id.replace(/\s+/g, "").toUpperCase(), key);
+    }
+    return map;
+  }, [users]);
   const lang = demoLang;
   const t = T[lang];
+  const availableReaders = useNfcLogin((uid, notify) => {
+    const norm = uid.replace(/\s+/g, "").toUpperCase();
+    if (isManager) {
+      // Admin/Host: copy the scanned card UID to the clipboard and show it.
+      void navigator.clipboard?.writeText(uid).catch(() => undefined);
+      showStatus(`${t.cardId}: ${uid}`);
+      notify("success");
+    } else if (!loggedOut) {
+      // A regular user is already logged in: switching via card is not allowed,
+      // so reject the tap (two orange beeps) instead of logging anyone in.
+      notify("blocked");
+    } else {
+      // Logged out: log in the matching user (or signal an unknown card).
+      const key = uidToUser.get(norm);
+      if (key !== undefined) {
+        playSfx("unlock");
+        setUser(key);
+        resetSession();
+        notify("success");
+      } else {
+        notify("fail");
+      }
+    }
+  });
   /**
    * Translates an internal theme key into its localized menu label.
    *
@@ -240,8 +461,8 @@ export function BonPrinterApp({ articles, users, onContext }: BonPrinterAppProps
 
   // Report login status, language and theme to the demo page (for its explanatory text)
   useEffect(() => {
-    onContext?.({ loggedOut, lang, demoDark, terminalAmount });
-  }, [onContext, loggedOut, lang, demoDark, terminalAmount]);
+    onContext?.({ loggedOut, lang, demoDark, terminalAmount, lastBon });
+  }, [onContext, loggedOut, lang, demoDark, terminalAmount, lastBon]);
 
   const articlesTotal = order.reduce((sum, l) => sum + l.price * l.qty, 0);
   // Deposit (Pfand) lines shown after the articles, sorted by amount ascending.
@@ -260,6 +481,7 @@ export function BonPrinterApp({ articles, users, onContext }: BonPrinterAppProps
    * @param msg - text to display; it disappears automatically after a moment
    */
   function showToast(msg: string) {
+    if (hideToasts) return;
     setToast(msg);
     window.setTimeout(() => setToast(null), TOAST_MS);
   }
@@ -318,13 +540,18 @@ export function BonPrinterApp({ articles, users, onContext }: BonPrinterAppProps
     setCardPayments({});
     setMarked(new Set(grid.flatMap((c) => (c?.mark ? [c.name] : []))));
     setPaperUsed(PAPER_START_M);
-    setSoundOn(false);
-    setDemoTheme("Hell");
-    setDemoLang(DEFAULT_LANG);
-    setShowPrices(true);
+    // Reset the persisted settings (registry / localStorage) back to defaults too.
+    changeSoundOn(false);
+    changeDemoTheme("Hell");
+    changeDemoLang(DEFAULT_LANG);
+    changeShowPrices(true);
     setReportMode(false);
-    setPrintReportActive(true);
-    setPcRegisterActive(false);
+    changePrintReportActive(true);
+    changePcRegisterActive(false);
+    changePrinterPort("None");
+    changePaperWidth("58 mm");
+    changeCardReader("None");
+    changeDisplayPort("None");
     setResetOpen(false);
     setResetInput("");
     setResetError(false);
@@ -690,6 +917,36 @@ export function BonPrinterApp({ articles, users, onContext }: BonPrinterAppProps
       playSfx("cash");
       setPaperUsed((p) => p + count * PAPER_PER_ITEM_M);
       recordPrint(isCancelled);
+      if (!isCancelled && articles.printArticle) {
+        // Drive the real ESC/POS printer (desktop build): one bon per item amount.
+        // Non-Free users always print the price; Free users only when configured.
+        printer.printOrder(order, {
+          user: user ?? "",
+          date: formatBonDate(new Date()),
+          showPrice: !freeMode || articles.printFreePrice,
+          header1: articles.header1,
+          header2: articles.header2,
+        });
+        // Show the last printed bon on the device printer (website demo): the
+        // order line whose article has the highest grid number is printed last.
+        // The name is truncated exactly like the printout (line width / 2 chars).
+        const lineWidth = paperWidth.startsWith("58") ? LINE_WIDTH_58 : LINE_WIDTH_80;
+        const nameMax = Math.floor(lineWidth / 2);
+        let lastName = "";
+        let lastPrice = 0;
+        let highestNumber = -1;
+        for (const line of order) {
+          const index = grid.findIndex((cell) => cell?.name === line.name);
+          if (index === -1) continue;
+          const number = gridNumberAt(index, rows, cols);
+          if (number > highestNumber) {
+            highestNumber = number;
+            lastName = line.name.replace(/\n/g, "").slice(0, nameMax);
+            lastPrice = line.price;
+          }
+        }
+        if (lastName) setLastBon({ name: lastName, price: lastPrice });
+      }
       showToast(t.printed);
       showStatus(`${isCancelled ? t.statusVoid : t.statusPrinted} ${user ?? ""}`);
       if (isOperator) {
@@ -718,6 +975,7 @@ export function BonPrinterApp({ articles, users, onContext }: BonPrinterAppProps
   function handlePrintOrOpen() {
     if (printed || order.length === 0) {
       playSfx("touch");
+      printer.openDrawer();
       showToast(t.drawerOpened);
       showStatus(t.statusDrawer);
     } else {
@@ -809,43 +1067,51 @@ export function BonPrinterApp({ articles, users, onContext }: BonPrinterAppProps
     : `${cellBg} hover:bg-[#f5f9ff] dark:hover:bg-slate-800`;
 
   return (
-    <div className="overflow-x-auto">
-      <div className="relative w-[740px] overflow-hidden rounded-lg border-2 border-[#8a8f96] bg-white shadow-2xl ring-1 ring-black/5 dark:border-slate-600 dark:bg-slate-900">
-        {/* Title bar */}
-        <div className="flex items-center justify-between bg-[#f8f8f8] px-3 py-1.5 text-sm dark:bg-slate-800">
-          <span className="flex select-none items-center gap-2 font-medium text-slate-700 dark:text-slate-200">
-            <img src="/pos-demo/app.png" alt="" className="h-4 w-4" />
-            BonPrinter
-          </span>
-          <div className="flex items-center gap-4 text-slate-400 dark:text-slate-500">
-            {/* Minimize button: a wide horizontal bar */}
-            <button
-              type="button"
-              onClick={minimize}
-              className="flex h-3 w-3 items-center justify-center transition hover:text-slate-600 dark:hover:text-slate-300"
-              aria-label="Minimieren"
-            >
-              <span className="block h-[1.5px] w-2.5 rounded-full bg-current" />
-            </button>
-            {/* Restore/fullscreen icon: two overlapping squares */}
-            <span className="relative inline-block h-3 w-3" aria-label="Vollbild">
-              <span className="absolute right-0 top-0 h-[9px] w-[9px] border border-current" />
-              <span className="absolute bottom-0 left-0 h-[9px] w-[9px] border border-current bg-[#f8f8f8] dark:bg-slate-800" />
+    <div className={fillMode ? "h-full w-full" : "overflow-x-auto"}>
+      <div
+        className={
+          fillMode
+            ? "relative flex h-full w-full flex-col overflow-hidden bg-white dark:bg-slate-900"
+            : "relative w-[740px] overflow-hidden rounded-lg border-2 border-[#8a8f96] bg-white shadow-2xl ring-1 ring-black/5 dark:border-slate-600 dark:bg-slate-900"
+        }
+      >
+        {/* Title bar (hidden in the standalone desktop build) */}
+        {!hideTitleBar && (
+          <div className="flex items-center justify-between bg-[#f8f8f8] px-3 py-1.5 text-sm dark:bg-slate-800">
+            <span className="flex select-none items-center gap-2 font-medium text-slate-700 dark:text-slate-200">
+              <img src="/pos-demo/app.png" alt="" className="h-4 w-4" />
+              BonPrinter
             </span>
-            {/* Close button */}
-            <button
-              type="button"
-              onClick={() => setConfirmClose(true)}
-              className="flex h-3 w-3 items-center justify-center text-sm leading-none transition hover:text-[#d32f2f]"
-              aria-label="Schließen"
-            >
-              ✕
-            </button>
+            <div className="flex items-center gap-4 text-slate-400 dark:text-slate-500">
+              {/* Minimize button: a wide horizontal bar */}
+              <button
+                type="button"
+                onClick={minimize}
+                className="flex h-3 w-3 items-center justify-center transition hover:text-slate-600 dark:hover:text-slate-300"
+                aria-label="Minimieren"
+              >
+                <span className="block h-[1.5px] w-2.5 rounded-full bg-current" />
+              </button>
+              {/* Restore/fullscreen icon: two overlapping squares */}
+              <span className="relative inline-block h-3 w-3" aria-label="Vollbild">
+                <span className="absolute right-0 top-0 h-[9px] w-[9px] border border-current" />
+                <span className="absolute bottom-0 left-0 h-[9px] w-[9px] border border-current bg-[#f8f8f8] dark:bg-slate-800" />
+              </span>
+              {/* Close button */}
+              <button
+                type="button"
+                onClick={() => setConfirmClose(true)}
+                className="flex h-3 w-3 items-center justify-center text-sm leading-none transition hover:text-[#d32f2f]"
+                aria-label="Schließen"
+              >
+                ✕
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Menu bar */}
-        <div className="flex gap-1 border-b border-[#a8a8a8] bg-[#f8f8f8] px-2 py-1 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+        {/* Menu bar (stays at constant size in fill mode) */}
+        <div className="flex shrink-0 gap-1 border-b border-[#a8a8a8] bg-[#f8f8f8] px-2 py-1 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
           {(loggedOut
             ? ["Einstellungen", "Hilfe"]
             : [
@@ -856,7 +1122,23 @@ export function BonPrinterApp({ articles, users, onContext }: BonPrinterAppProps
               ]
           ).map((label) =>
             label === "Konfiguration" ? (
-              <ConfigMenu key={label} lang={lang} demoDark={demoDark} />
+              <ConfigMenu
+                key={label}
+                lang={lang}
+                demoDark={demoDark}
+                printerPort={printerPort}
+                setPrinterPort={changePrinterPort}
+                paperWidth={paperWidth}
+                setPaperWidth={changePaperWidth}
+                cardReader={cardReader}
+                setCardReader={changeCardReader}
+                displayPort={displayPort}
+                setDisplayPort={changeDisplayPort}
+                liveHardware={printer.active}
+                availablePorts={printer.availablePorts}
+                availableReaders={availableReaders}
+                onEditArticles={() => setArticleEditorOpen(true)}
+              />
             ) : label === "Einstellungen" ? (
               <div key={label} className="relative">
                 <button
@@ -879,7 +1161,7 @@ export function BonPrinterApp({ articles, users, onContext }: BonPrinterAppProps
                     <div className="absolute left-0 top-full z-30 mt-1 w-60 rounded-md border border-[#a8a8a8] bg-white py-1 text-slate-700 shadow-xl dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">
                       <button
                         type="button"
-                        onClick={() => setSoundOn((s) => !s)}
+                        onClick={() => changeSoundOn(!soundOn)}
                         className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-[#f0f0f0] dark:hover:bg-slate-700"
                       >
                         <img src={iconSrc(soundOn ? "sound" : "sound_mute")} alt="" className="h-[18px] w-[18px]" />
@@ -907,7 +1189,7 @@ export function BonPrinterApp({ articles, users, onContext }: BonPrinterAppProps
                                 key={opt}
                                 type="button"
                                 onClick={() => {
-                                  setDemoTheme(opt);
+                                  changeDemoTheme(opt);
                                   closeSettings();
                                 }}
                                 className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-[#f0f0f0] dark:hover:bg-slate-700"
@@ -947,7 +1229,7 @@ export function BonPrinterApp({ articles, users, onContext }: BonPrinterAppProps
                                 key={opt}
                                 type="button"
                                 onClick={() => {
-                                  setDemoLang(opt);
+                                  changeDemoLang(opt);
                                   closeSettings();
                                 }}
                                 className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-[#f0f0f0] dark:hover:bg-slate-700"
@@ -973,7 +1255,7 @@ export function BonPrinterApp({ articles, users, onContext }: BonPrinterAppProps
                         <input
                           type="checkbox"
                           checked={showPrices}
-                          onChange={(e) => setShowPrices(e.target.checked)}
+                          onChange={(e) => changeShowPrices(e.target.checked)}
                           className="h-4 w-4 accent-brand-600"
                         />
                         <span>{t.showPrices}</span>
@@ -1137,7 +1419,7 @@ export function BonPrinterApp({ articles, users, onContext }: BonPrinterAppProps
                             <input
                               type="checkbox"
                               checked={printReportActive}
-                              onChange={(e) => setPrintReportActive(e.target.checked)}
+                              onChange={(e) => changePrintReportActive(e.target.checked)}
                               className="h-4 w-4 accent-brand-600"
                             />
                             <span>{t.printReportActivate}</span>
@@ -1147,7 +1429,7 @@ export function BonPrinterApp({ articles, users, onContext }: BonPrinterAppProps
                             <input
                               type="checkbox"
                               checked={pcRegisterActive}
-                              onChange={(e) => setPcRegisterActive(e.target.checked)}
+                              onChange={(e) => changePcRegisterActive(e.target.checked)}
                               className="h-4 w-4 accent-brand-600"
                             />
                             <span>{t.pcRegisterActivate}</span>
@@ -1215,366 +1497,384 @@ export function BonPrinterApp({ articles, users, onContext }: BonPrinterAppProps
           )}
         </div>
 
-        <div className="grid grid-cols-[1.7fr_1fr]">
-          {/* LEFT */}
-          <div className="flex flex-col border-r border-[#a8a8a8] bg-white dark:border-slate-700 dark:bg-slate-900">
-            {/* Grid: login / numpad / articles */}
-            <div className="grid auto-rows-[68px] grid-cols-6">
-              {loggedOut
-                ? LOGIN.map((cell, i) => {
-                    const isNum = cell.t === "num";
-                    const key = loginKey(cell);
-                    const locked = !isNum && pwKind(key) === "locked";
-                    const active = key !== null && key === pwUser;
-                    const name = cell.t === "op" ? operatorName(cell.label) : null;
-                    const label = name ? `${cell.label}\n${name}` : cell.label;
-                    return (
-                      <button
-                        key={i}
-                        type="button"
-                        onClick={() => (isNum ? handlePwDigit(cell.label) : handleLogin(cell))}
-                        disabled={locked || (isNum && pwUser === null)}
-                        className={`flex flex-col items-center justify-center px-1 text-center text-[13px] font-medium leading-tight transition ${locked ? "" : "active:scale-95"} ${cellBorder} ${loginCellClass(cell, locked, active)}`}
-                      >
-                        {multiline(label)}
-                      </button>
-                    );
-                  })
-                : isManager
-                  ? Array.from({ length: grid.length }, (_, i) => (
-                      <div
-                        key={i}
-                        className={`flex select-none items-center justify-center text-lg font-medium ${cellBorder} ${cellBg} text-slate-400 dark:text-slate-500`}
-                      >
-                        {gridNumberAt(i, rows, cols)}
-                      </div>
-                    ))
-                  : numpadMode
-                    ? numpadCells(numpadMode === "change").map((d, i) =>
-                        d ? (
+        {/* Body: in fill mode it is stretched to fill the area below the menu bar */}
+        <div ref={bodyContainerRef} className={fillMode ? "relative min-h-0 flex-1 overflow-hidden" : "contents"}>
+          <div
+            ref={bodyRef}
+            className={fillMode ? "absolute left-0 top-0 w-[740px]" : "contents"}
+            style={
+              fillMode ? { transform: `scale(${bodyScale.x}, ${bodyScale.y})`, transformOrigin: "top left" } : undefined
+            }
+          >
+            <div className="grid grid-cols-[1.7fr_1fr]">
+              {/* LEFT */}
+              <div className="flex flex-col border-r border-[#a8a8a8] bg-white dark:border-slate-700 dark:bg-slate-900">
+                {/* Grid: login / numpad / articles */}
+                <div className="grid auto-rows-[68px] grid-cols-6">
+                  {loggedOut
+                    ? LOGIN.map((cell, i) => {
+                        const isNum = cell.t === "num";
+                        const key = loginKey(cell);
+                        const locked = !isNum && pwKind(key) === "locked";
+                        const active = key !== null && key === pwUser;
+                        const name = cell.t === "op" ? operatorName(cell.label) : null;
+                        const label = name ? `${cell.label}\n${name}` : cell.label;
+                        return (
                           <button
                             key={i}
                             type="button"
-                            onClick={() => pressDigit(d)}
-                            className={`flex items-center justify-center text-2xl font-semibold transition active:scale-95 ${cellBorder} ${cellBg} ${blue} hover:bg-[#f5f9ff] dark:hover:bg-slate-800`}
+                            onClick={() => (isNum ? handlePwDigit(cell.label) : handleLogin(cell))}
+                            disabled={locked || (isNum && pwUser === null)}
+                            className={`flex flex-col items-center justify-center px-1 text-center text-[13px] font-medium leading-tight transition ${locked ? "" : "active:scale-95"} ${cellBorder} ${loginCellClass(cell, locked, active)}`}
                           >
-                            {d}
+                            {multiline(label)}
                           </button>
-                        ) : (
-                          <div key={i} />
-                        ),
-                      )
-                    : grid.map((cell, i) =>
-                        cell ? (
-                          <button
+                        );
+                      })
+                    : isManager
+                      ? Array.from({ length: grid.length }, (_, i) => (
+                          <div
                             key={i}
-                            type="button"
-                            onPointerDown={() => startPress(cell.name)}
-                            onPointerUp={endPress}
-                            onPointerLeave={endPress}
-                            onClick={() => {
-                              if (longPressFired.current) {
-                                longPressFired.current = false;
-                                return;
-                              }
-                              addArticle(cell);
-                            }}
-                            className={`flex select-none flex-col items-center justify-center px-1 text-center text-[12px] font-medium leading-tight transition active:scale-95 ${cellBorder} ${blue} ${
-                              marked.has(cell.name)
-                                ? "bg-[#fdba74] hover:bg-[#fcb265] dark:bg-orange-700/50 dark:hover:bg-orange-700/70"
-                                : articleBg
-                            }`}
-                            // bg/fg from articles.ini override the default colors (orange mark keeps priority)
-                            style={marked.has(cell.name) ? undefined : { backgroundColor: cell.bg, color: cell.fg }}
+                            className={`flex select-none items-center justify-center text-lg font-medium ${cellBorder} ${cellBg} text-slate-400 dark:text-slate-500`}
                           >
-                            <span className="block">{multiline(cell.name)}</span>
-                            {showPrices && <span className="mt-1 block">{euro(cell.price)}</span>}
-                          </button>
-                        ) : (
-                          <div key={i} />
-                        ),
-                      )}
-            </div>
+                            {gridNumberAt(i, rows, cols)}
+                          </div>
+                        ))
+                      : numpadMode
+                        ? numpadCells(numpadMode === "change").map((d, i) =>
+                            d ? (
+                              <button
+                                key={i}
+                                type="button"
+                                onClick={() => pressDigit(d)}
+                                className={`flex items-center justify-center text-2xl font-semibold transition active:scale-95 ${cellBorder} ${cellBg} ${blue} hover:bg-[#f5f9ff] dark:hover:bg-slate-800`}
+                              >
+                                {d}
+                              </button>
+                            ) : (
+                              <div key={i} />
+                            ),
+                          )
+                        : grid.map((cell, i) =>
+                            cell ? (
+                              <button
+                                key={i}
+                                type="button"
+                                onPointerDown={() => startPress(cell.name)}
+                                onPointerUp={endPress}
+                                onPointerLeave={endPress}
+                                onClick={() => {
+                                  if (longPressFired.current) {
+                                    longPressFired.current = false;
+                                    return;
+                                  }
+                                  addArticle(cell);
+                                }}
+                                className={`flex select-none flex-col items-center justify-center px-1 text-center text-[12px] font-medium leading-tight transition active:scale-95 ${cellBorder} ${blue} ${
+                                  marked.has(cell.name)
+                                    ? "bg-[#fdba74] hover:bg-[#fcb265] dark:bg-orange-700/50 dark:hover:bg-orange-700/70"
+                                    : articleBg
+                                }`}
+                                // bg/fg from articles.ini override the default colors (orange mark keeps priority)
+                                style={marked.has(cell.name) ? undefined : { backgroundColor: cell.bg, color: cell.fg }}
+                              >
+                                <span className="block">{multiline(cell.name)}</span>
+                                {showPrices && <span className="mt-1 block">{euro(cell.price)}</span>}
+                              </button>
+                            ) : (
+                              <div key={i} />
+                            ),
+                          )}
+                </div>
 
-            {/* Action keys */}
-            <div className="grid auto-rows-[68px] grid-cols-6">
-              <button
-                type="button"
-                onClick={handleLock}
-                disabled={loggedOut}
-                className={`flex items-center justify-center ${cellBorder} ${cellBg} ${
-                  loggedOut
-                    ? "text-[#bdbdbd] dark:text-slate-600"
-                    : "text-slate-800 hover:bg-[#f5f5f5] dark:text-slate-200 dark:hover:bg-slate-800"
-                }`}
-                title={loggedOut ? "Abgemeldet" : "Benutzer abmelden"}
-              >
-                <img src={iconSrc("lock")} alt="Lock" className={`h-8 w-8 ${loggedOut ? "opacity-30" : ""}`} />
-              </button>
-              <button
-                type="button"
-                onClick={handleX}
-                disabled={xDisabled}
-                className={`flex items-center justify-center text-2xl font-semibold ${cellBorder} ${cellBg} hover:bg-[#f5f9ff] dark:hover:bg-slate-800 ${
-                  xDisabled ? grey : blue
-                }`}
-                title="Menge (Multiplikator)"
-              >
-                X
-              </button>
-              <button
-                type="button"
-                onClick={handleRch}
-                disabled={rchDisabled}
-                className={`flex items-center justify-center text-xl font-semibold ${cellBorder} ${cellBg} hover:bg-[#f5f9ff] dark:hover:bg-slate-800 ${
-                  rchDisabled ? grey : blue
-                }`}
-                title="Rückgeld berechnen (nach dem Drucken)"
-              >
-                {t.calc}
-              </button>
-              {(() => {
-                const pwMode = pwUser !== null;
-                // after an operator logout the last printout stays visible: Entf clears it
-                const reviewMode = loggedOut && pwUser === null && order.length > 0;
-                const cardMode = !loggedOut && printed && !cancelled && !freeMode && !numpadMode && !cardPaidThisPrint;
-                const entfDisabled = loggedOut || isManager || (!numpadMode && (order.length === 0 || printed));
-                const cardDisabled = loggedOut || isManager;
-                const disabled = pwMode
-                  ? pwInput.length === 0
-                  : reviewMode
-                    ? false
-                    : cardMode
-                      ? cardDisabled
-                      : entfDisabled;
-                return (
+                {/* Action keys */}
+                <div className="grid auto-rows-[68px] grid-cols-6">
                   <button
                     type="button"
-                    onClick={() =>
-                      pwMode
-                        ? handlePwDelete()
-                        : reviewMode
-                          ? clearReview()
-                          : cardMode
-                            ? handleCardPayment()
-                            : numpadMode
-                              ? setNumInput("")
-                              : handleEntf()
-                    }
-                    disabled={disabled}
-                    className={`flex items-center justify-center text-xl font-semibold ${cellBorder} ${cellBg} ${
-                      cardMode
-                        ? disabled
-                          ? grey
-                          : `${blue} hover:bg-[#f5f9ff] dark:hover:bg-slate-800`
-                        : disabled
-                          ? "text-[#e6b3b3] dark:text-slate-600"
-                          : "text-[#d32f2f] hover:bg-[#fff5f5] dark:text-[#f87171] dark:hover:bg-slate-800"
+                    onClick={handleLock}
+                    disabled={loggedOut}
+                    className={`flex items-center justify-center ${cellBorder} ${cellBg} ${
+                      loggedOut
+                        ? "text-[#bdbdbd] dark:text-slate-600"
+                        : "text-slate-800 hover:bg-[#f5f5f5] dark:text-slate-200 dark:hover:bg-slate-800"
                     }`}
-                    title={
-                      pwMode || numpadMode
-                        ? "Eingabe löschen"
-                        : reviewMode
-                          ? "Anzeige löschen"
-                          : cardMode
-                            ? "Kartenzahlung verbuchen"
-                            : "Position(en) löschen"
-                    }
+                    title={loggedOut ? "Abgemeldet" : "Benutzer abmelden"}
                   >
-                    {cardMode ? <img src="/pos-demo/ec.png" alt="EC" className="h-12 w-12" /> : t.clear}
+                    <img src={iconSrc("lock")} alt="Lock" className={`h-8 w-8 ${loggedOut ? "opacity-30" : ""}`} />
                   </button>
-                );
-              })()}
-              <button
-                type="button"
-                onClick={handlePrintOrOpen}
-                disabled={actionsDisabled || isManager}
-                className={`col-span-2 flex items-center justify-center text-3xl font-bold ${cellBorder} ${cellBg} hover:bg-[#f5f9ff] dark:hover:bg-slate-800 ${
-                  actionsDisabled || isManager ? grey : blue
-                }`}
-                title={order.length === 0 || printed ? "Kassenlade öffnen" : "Wertmarken drucken"}
-              >
-                {order.length === 0 || printed ? t.open : t.print}
-              </button>
-            </div>
-          </div>
-
-          {/* RIGHT: order table + display field */}
-          <div className="relative">
-            <div className="absolute inset-0 flex flex-col">
-              <div ref={listRef} className="min-h-0 flex-1 overflow-auto">
-                <div className="grid grid-cols-[2.5rem_1fr_5rem] text-[15px]">
-                  <div className="sticky top-0 z-10 select-none border-b border-r border-[#a8a8a8] bg-[#e0e0e0] px-2 py-1.5 text-center text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                    n
-                  </div>
-                  <div className="sticky top-0 z-10 select-none border-b border-r border-[#a8a8a8] bg-[#e0e0e0] px-2 py-1.5 text-center text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                    {t.article}
-                  </div>
-                  <div className="sticky top-0 z-10 select-none border-b border-[#a8a8a8] bg-[#e0e0e0] px-2 py-1.5 text-center text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                    {t.price}
-                  </div>
-
-                  {order.map((l, i) => {
-                    const sel = selected?.index === i;
-                    const m = sel ? selected!.mode : null;
-                    const cellHi = "bg-[#bcdcf7] font-bold dark:bg-slate-600";
-                    const rowBg = sel
-                      ? "bg-[#e3f0fc] dark:bg-slate-800"
-                      : marked.has(l.name)
-                        ? "bg-[#fdba74] dark:bg-orange-700/40"
-                        : "";
-                    const hover = printed ? "cursor-default" : "hover:bg-[#eef6fd] dark:hover:bg-slate-700";
+                  <button
+                    type="button"
+                    onClick={handleX}
+                    disabled={xDisabled}
+                    className={`flex items-center justify-center text-2xl font-semibold ${cellBorder} ${cellBg} hover:bg-[#f5f9ff] dark:hover:bg-slate-800 ${
+                      xDisabled ? grey : blue
+                    }`}
+                    title="Menge (Multiplikator)"
+                  >
+                    X
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRch}
+                    disabled={rchDisabled}
+                    className={`flex items-center justify-center text-xl font-semibold ${cellBorder} ${cellBg} hover:bg-[#f5f9ff] dark:hover:bg-slate-800 ${
+                      rchDisabled ? grey : blue
+                    }`}
+                    title="Rückgeld berechnen (nach dem Drucken)"
+                  >
+                    {t.calc}
+                  </button>
+                  {(() => {
+                    const pwMode = pwUser !== null;
+                    // after an operator logout the last printout stays visible: Entf clears it
+                    const reviewMode = loggedOut && pwUser === null && order.length > 0;
+                    const cardMode =
+                      articles.ec &&
+                      !loggedOut &&
+                      printed &&
+                      !cancelled &&
+                      !freeMode &&
+                      !numpadMode &&
+                      !cardPaidThisPrint;
+                    const entfDisabled = loggedOut || isManager || (!numpadMode && (order.length === 0 || printed));
+                    const cardDisabled = loggedOut || isManager;
+                    const disabled = pwMode
+                      ? pwInput.length === 0
+                      : reviewMode
+                        ? false
+                        : cardMode
+                          ? cardDisabled
+                          : entfDisabled;
                     return (
-                      <div key={i} className="contents">
-                        <button
-                          type="button"
-                          onClick={() => selectAt(i, "qty")}
-                          disabled={printed}
-                          className={`border-b border-r border-[#c2c2c2] px-2 py-1 text-right text-slate-900 dark:border-slate-800 dark:text-slate-100 ${
-                            m === "qty" ? cellHi : rowBg || hover
-                          }`}
-                        >
-                          {l.qty}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => selectAt(i, "one")}
-                          disabled={printed}
-                          className={`min-w-0 truncate border-b border-r border-[#c2c2c2] px-2 py-1 text-left text-slate-900 dark:border-slate-800 dark:text-slate-100 ${
-                            m === "one" ? cellHi : rowBg || hover
-                          }`}
-                        >
-                          {l.name.replace(/\n/g, "")}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => selectAt(i, "line")}
-                          disabled={printed}
-                          className={`border-b border-[#c2c2c2] px-2 py-1 text-right tabular-nums text-slate-900 dark:border-slate-800 dark:text-slate-100 ${
-                            m === "line" ? cellHi : rowBg || hover
-                          }`}
-                        >
-                          {euro(l.price * l.qty)}
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          pwMode
+                            ? handlePwDelete()
+                            : reviewMode
+                              ? clearReview()
+                              : cardMode
+                                ? handleCardPayment()
+                                : numpadMode
+                                  ? setNumInput("")
+                                  : handleEntf()
+                        }
+                        disabled={disabled}
+                        className={`flex items-center justify-center text-xl font-semibold ${cellBorder} ${cellBg} ${
+                          cardMode
+                            ? disabled
+                              ? grey
+                              : `${blue} hover:bg-[#f5f9ff] dark:hover:bg-slate-800`
+                            : disabled
+                              ? "text-[#e6b3b3] dark:text-slate-600"
+                              : "text-[#d32f2f] hover:bg-[#fff5f5] dark:text-[#f87171] dark:hover:bg-slate-800"
+                        }`}
+                        title={
+                          pwMode || numpadMode
+                            ? "Eingabe löschen"
+                            : reviewMode
+                              ? "Anzeige löschen"
+                              : cardMode
+                                ? "Kartenzahlung verbuchen"
+                                : "Position(en) löschen"
+                        }
+                      >
+                        {cardMode ? <img src="/pos-demo/ec.png" alt="EC" className="h-12 w-12" /> : t.clear}
+                      </button>
                     );
-                  })}
-                  {/* Deposit (Pfand) rows: red, always last, sorted by amount */}
-                  {depositRows.map((d) => {
-                    const sel = selectedDeposit === d.key;
-                    const rowBg = sel ? "bg-[#e3f0fc] dark:bg-slate-800" : "";
-                    const hover = printed ? "cursor-default" : "hover:bg-[#eef6fd] dark:hover:bg-slate-700";
-                    const red = "text-[#d32f2f] dark:text-[#f87171]";
-                    const pick = () => {
-                      setSelectedDeposit(d.key);
-                      setSelected(null);
-                    };
-                    return (
-                      <div key={`deposit-${d.key}`} className="contents">
-                        <button
-                          type="button"
-                          onClick={pick}
-                          disabled={printed}
-                          className={`border-b border-r border-[#c2c2c2] px-2 py-1 text-right dark:border-slate-800 ${red} ${rowBg || hover}`}
-                        >
-                          {d.count}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={pick}
-                          disabled={printed}
-                          className={`min-w-0 truncate border-b border-r border-[#c2c2c2] px-2 py-1 text-left dark:border-slate-800 ${red} ${rowBg || hover}`}
-                        >
-                          PFAND ({euro(d.amount)})
-                        </button>
-                        <button
-                          type="button"
-                          onClick={pick}
-                          disabled={printed}
-                          className={`border-b border-[#c2c2c2] px-2 py-1 text-right tabular-nums dark:border-slate-800 ${red} ${rowBg || hover}`}
-                        >
-                          {euro(d.amount * d.count)}
-                        </button>
-                      </div>
-                    );
-                  })}
+                  })()}
+                  <button
+                    type="button"
+                    onClick={handlePrintOrOpen}
+                    disabled={actionsDisabled || isManager}
+                    className={`col-span-2 flex items-center justify-center text-3xl font-bold ${cellBorder} ${cellBg} hover:bg-[#f5f9ff] dark:hover:bg-slate-800 ${
+                      actionsDisabled || isManager ? grey : blue
+                    }`}
+                    title={order.length === 0 || printed ? "Kassenlade öffnen" : "Wertmarken drucken"}
+                  >
+                    {order.length === 0 || printed ? t.open : t.print}
+                  </button>
                 </div>
               </div>
 
-              {/* Display field at the bottom right (green after printing) */}
-              <div
-                className={`flex h-[84px] flex-col justify-center border-t border-[#a8a8a8] px-4 dark:border-slate-700 ${
-                  cancelled && numpadMode === null && !changeResult
-                    ? "bg-[#fecaca] dark:bg-red-900/40"
-                    : printed && cardPaidThisPrint && numpadMode === null && !changeResult
-                      ? "bg-[#bfdbfe] dark:bg-blue-900/40"
-                      : printed && numpadMode === null && !changeResult
-                        ? "bg-[#bbf7d0] dark:bg-green-800/40"
-                        : ""
-                }`}
-              >
-                {changeResult ? (
-                  <div className="space-y-0.5 text-right text-sm tabular-nums text-slate-900 dark:text-slate-100">
-                    <div className="flex justify-between">
-                      <span className="text-slate-500 dark:text-slate-400">{t.toPay}</span>
-                      <span>{euro(changeResult.total)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-500 dark:text-slate-400">{t.given}</span>
-                      <span>{euro(changeResult.given)}</span>
-                    </div>
-                    <div className="flex justify-between font-bold">
-                      <span className="text-slate-500 dark:text-slate-400">{t.change}</span>
-                      <span className={changeResult.back >= 0 ? blue : "text-[#d32f2f]"}>
-                        {changeResult.back >= 0 ? euro(changeResult.back) : t.tooLittle}
-                      </span>
+              {/* RIGHT: order table + display field */}
+              <div className="relative">
+                <div className="absolute inset-0 flex flex-col">
+                  <div ref={listRef} className="min-h-0 flex-1 overflow-auto">
+                    <div className="grid grid-cols-[2.5rem_1fr_5rem] text-[15px]">
+                      <div className="sticky top-0 z-10 select-none border-b border-r border-[#a8a8a8] bg-[#e0e0e0] px-2 py-1.5 text-center text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                        n
+                      </div>
+                      <div className="sticky top-0 z-10 select-none border-b border-r border-[#a8a8a8] bg-[#e0e0e0] px-2 py-1.5 text-center text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                        {t.article}
+                      </div>
+                      <div className="sticky top-0 z-10 select-none border-b border-[#a8a8a8] bg-[#e0e0e0] px-2 py-1.5 text-center text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                        {t.price}
+                      </div>
+
+                      {order.map((l, i) => {
+                        const sel = selected?.index === i;
+                        const m = sel ? selected!.mode : null;
+                        const cellHi = "bg-[#bcdcf7] font-bold dark:bg-slate-600";
+                        const rowBg = sel
+                          ? "bg-[#e3f0fc] dark:bg-slate-800"
+                          : marked.has(l.name)
+                            ? "bg-[#fdba74] dark:bg-orange-700/40"
+                            : "";
+                        const hover = printed ? "cursor-default" : "hover:bg-[#eef6fd] dark:hover:bg-slate-700";
+                        return (
+                          <div key={i} className="contents">
+                            <button
+                              type="button"
+                              onClick={() => selectAt(i, "qty")}
+                              disabled={printed}
+                              className={`border-b border-r border-[#c2c2c2] px-2 py-1 text-right text-slate-900 dark:border-slate-800 dark:text-slate-100 ${
+                                m === "qty" ? cellHi : rowBg || hover
+                              }`}
+                            >
+                              {l.qty}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => selectAt(i, "one")}
+                              disabled={printed}
+                              className={`min-w-0 truncate border-b border-r border-[#c2c2c2] px-2 py-1 text-left text-slate-900 dark:border-slate-800 dark:text-slate-100 ${
+                                m === "one" ? cellHi : rowBg || hover
+                              }`}
+                            >
+                              {l.name.replace(/\n/g, "")}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => selectAt(i, "line")}
+                              disabled={printed}
+                              className={`border-b border-[#c2c2c2] px-2 py-1 text-right tabular-nums text-slate-900 dark:border-slate-800 dark:text-slate-100 ${
+                                m === "line" ? cellHi : rowBg || hover
+                              }`}
+                            >
+                              {euro(l.price * l.qty)}
+                            </button>
+                          </div>
+                        );
+                      })}
+                      {/* Deposit (Pfand) rows: red, always last, sorted by amount */}
+                      {depositRows.map((d) => {
+                        const sel = selectedDeposit === d.key;
+                        const rowBg = sel ? "bg-[#e3f0fc] dark:bg-slate-800" : "";
+                        const hover = printed ? "cursor-default" : "hover:bg-[#eef6fd] dark:hover:bg-slate-700";
+                        const red = "text-[#d32f2f] dark:text-[#f87171]";
+                        const pick = () => {
+                          setSelectedDeposit(d.key);
+                          setSelected(null);
+                        };
+                        return (
+                          <div key={`deposit-${d.key}`} className="contents">
+                            <button
+                              type="button"
+                              onClick={pick}
+                              disabled={printed}
+                              className={`border-b border-r border-[#c2c2c2] px-2 py-1 text-right dark:border-slate-800 ${red} ${rowBg || hover}`}
+                            >
+                              {d.count}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={pick}
+                              disabled={printed}
+                              className={`min-w-0 truncate border-b border-r border-[#c2c2c2] px-2 py-1 text-left dark:border-slate-800 ${red} ${rowBg || hover}`}
+                            >
+                              PFAND ({euro(d.amount)})
+                            </button>
+                            <button
+                              type="button"
+                              onClick={pick}
+                              disabled={printed}
+                              className={`border-b border-[#c2c2c2] px-2 py-1 text-right tabular-nums dark:border-slate-800 ${red} ${rowBg || hover}`}
+                            >
+                              {euro(d.amount * d.count)}
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
-                ) : pwUser !== null ? (
-                  pwInput.length === 0 ? (
-                    <div className="flex items-center justify-start">
-                      <span className="truncate text-3xl font-semibold text-slate-700 dark:text-slate-200">
-                        {operatorName(pwUser) ? `${pwUser} (${operatorName(pwUser)})` : pwUser}
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-start">
-                      <span className="text-4xl font-bold tracking-[0.3em] text-slate-900 dark:text-white">
-                        {"•".repeat(pwInput.length)}
-                      </span>
-                    </div>
-                  )
-                ) : (
-                  <div className={`flex items-center ${numpadMode ? "justify-start" : "justify-end"}`}>
-                    <span className="text-4xl font-bold tabular-nums text-slate-900 dark:text-white">
-                      {numpadMode === "qty"
-                        ? numInput || "0"
-                        : numpadMode === "change"
-                          ? `${numInput || "0"} €`
-                          : multiplier > 1
-                            ? `${multiplier} x`
-                            : euro(total)}
-                    </span>
+
+                  {/* Display field at the bottom right (green after printing) */}
+                  <div
+                    className={`flex h-[84px] flex-col justify-center border-t border-[#a8a8a8] px-4 dark:border-slate-700 ${
+                      cancelled && numpadMode === null && !changeResult
+                        ? "bg-[#fecaca] dark:bg-red-900/40"
+                        : printed && cardPaidThisPrint && numpadMode === null && !changeResult
+                          ? "bg-[#bfdbfe] dark:bg-blue-900/40"
+                          : printed && numpadMode === null && !changeResult
+                            ? "bg-[#bbf7d0] dark:bg-green-800/40"
+                            : ""
+                    }`}
+                  >
+                    {changeResult ? (
+                      <div className="space-y-0.5 text-right text-sm tabular-nums text-slate-900 dark:text-slate-100">
+                        <div className="flex justify-between">
+                          <span className="text-slate-500 dark:text-slate-400">{t.toPay}</span>
+                          <span>{euro(changeResult.total)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500 dark:text-slate-400">{t.given}</span>
+                          <span>{euro(changeResult.given)}</span>
+                        </div>
+                        <div className="flex justify-between font-bold">
+                          <span className="text-slate-500 dark:text-slate-400">{t.change}</span>
+                          <span className={changeResult.back >= 0 ? blue : "text-[#d32f2f]"}>
+                            {changeResult.back >= 0 ? euro(changeResult.back) : t.tooLittle}
+                          </span>
+                        </div>
+                      </div>
+                    ) : pwUser !== null ? (
+                      pwInput.length === 0 ? (
+                        <div className="flex items-center justify-start">
+                          <span className="truncate text-3xl font-semibold text-slate-700 dark:text-slate-200">
+                            {operatorName(pwUser) ? `${pwUser} (${operatorName(pwUser)})` : pwUser}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-start">
+                          <span className="text-4xl font-bold tracking-[0.3em] text-slate-900 dark:text-white">
+                            {"•".repeat(pwInput.length)}
+                          </span>
+                        </div>
+                      )
+                    ) : (
+                      <div className={`flex items-center ${numpadMode ? "justify-start" : "justify-end"}`}>
+                        <span className="text-4xl font-bold tabular-nums text-slate-900 dark:text-white">
+                          {numpadMode === "qty"
+                            ? numInput || "0"
+                            : numpadMode === "change"
+                              ? `${numInput || "0"} €`
+                              : multiplier > 1
+                                ? `${multiplier} x`
+                                : euro(total)}
+                        </span>
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
               </div>
             </div>
-          </div>
-        </div>
 
-        {/* Status bar */}
-        <div className="flex select-none items-center justify-between border-t border-[#a8a8a8] bg-[#f0f0f0] px-3 py-1 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
-          <span
-            className={
-              statusMsg && statusTone === "warn" ? "font-semibold text-orange-500 dark:text-orange-400" : undefined
-            }
-          >
-            {statusMsg ??
-              `${t.user}: ${user ? (operatorName(user) ? `${user} (${operatorName(user)})` : user) : "None"}`}
-          </span>
-          <span>
-            {t.paperStatus}: {paperPercent}% ({paperRemaining.toFixed(2)}/{PAPER_ROLL_M.toFixed(2)} m)
-          </span>
+            {/* Status bar */}
+            <div className="flex select-none items-center justify-between border-t border-[#a8a8a8] bg-[#f0f0f0] px-3 py-1 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+              <span
+                className={
+                  statusMsg && statusTone === "warn" ? "font-semibold text-orange-500 dark:text-orange-400" : undefined
+                }
+              >
+                {statusMsg ??
+                  `${t.user}: ${user ? (operatorName(user) ? `${user} (${operatorName(user)})` : user) : "None"}`}
+              </span>
+              <span>
+                {t.paperStatus}: {paperPercent}% ({paperRemaining.toFixed(2)}/{PAPER_ROLL_M.toFixed(2)} m)
+              </span>
+            </div>
+          </div>
         </div>
 
         {/* Toast */}
@@ -1924,6 +2224,8 @@ export function BonPrinterApp({ articles, users, onContext }: BonPrinterAppProps
         {printPreviewOpen && (
           <PrintPreview lang={lang} articles={articles} onClose={() => setPrintPreviewOpen(false)} />
         )}
+
+        {articleEditorOpen && <ArticleEditor lang={lang} value={articleText} onClose={saveArticles} />}
       </div>
     </div>
   );
