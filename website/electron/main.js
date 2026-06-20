@@ -7,6 +7,7 @@
  * the RFID bridge over ws://127.0.0.1 is allowed).
  */
 const path = require("node:path");
+const fs = require("node:fs");
 const { pathToFileURL } = require("node:url");
 const { spawn, execFileSync } = require("node:child_process");
 const { app, BrowserWindow, protocol, net, ipcMain } = require("electron");
@@ -157,6 +158,107 @@ ipcMain.on("settings:get", (event, { section, key }) => {
   event.returnValue = readSetting(section, key);
 });
 ipcMain.on("settings:set", (_event, { section, key, value }) => writeSetting(section, key, value));
+
+// Printed-articles log (PrintLog.csv), stored next to the exe like the reference
+// project; the report ("Abrechnen") is built from it and clears it afterwards.
+const PRINT_LOG_HEADER = ["Count", "Article Name", "Article Number", "Group", "Total Price", "User", "Date", "Printer"];
+
+/**
+ * Returns the PrintLog.csv path next to the (portable) exe; the project dir in dev.
+ *
+ * @returns {string} absolute path to PrintLog.csv
+ */
+function printLogPath() {
+  const baseDir = app.isPackaged
+    ? process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(process.execPath)
+    : process.cwd();
+  return path.join(baseDir, "PrintLog.csv");
+}
+
+/**
+ * Escapes a CSV field: strips line breaks and replaces the ";" delimiter so the
+ * semicolon-separated file stays parseable.
+ *
+ * @param {*} value field value
+ * @returns {string} the sanitized field
+ */
+function csvField(value) {
+  return String(value)
+    .replace(/[\r\n]+/g, " ")
+    .replace(/;/g, ",");
+}
+
+ipcMain.on("printlog:append", (_event, rows) => {
+  try {
+    const file = printLogPath();
+    const lines = [];
+    if (!fs.existsSync(file)) lines.push(PRINT_LOG_HEADER.join(";"));
+    for (const row of rows) lines.push(row.map(csvField).join(";"));
+    fs.appendFileSync(file, `${lines.join("\r\n")}\r\n`, "utf8");
+  } catch (err) {
+    console.error("print log append failed:", err.message);
+  }
+});
+
+ipcMain.on("printlog:read", (event) => {
+  try {
+    const file = printLogPath();
+    event.returnValue = fs.existsSync(file)
+      ? fs
+          .readFileSync(file, "utf8")
+          .split(/\r?\n/)
+          .filter((line) => line.length > 0)
+          .map((line) => line.split(";"))
+      : [];
+  } catch {
+    event.returnValue = [];
+  }
+});
+
+ipcMain.on("printlog:clear", () => {
+  try {
+    const file = printLogPath();
+    if (fs.existsSync(file)) fs.unlinkSync(file);
+  } catch (err) {
+    console.error("print log clear failed:", err.message);
+  }
+});
+
+// Create a report folder in the output directory (~/BonPrinter) like the
+// reference project: copy the print log into it, write the current article
+// config (articles.ini), then clear the print log. Returns the folder path.
+ipcMain.on("report:create", (event, configText) => {
+  try {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    const suffix = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}h${pad(now.getMinutes())}m${pad(now.getSeconds())}s`;
+    const folder = path.join(app.getPath("home"), "BonPrinter", `PrintReport_${suffix}`);
+    fs.mkdirSync(folder, { recursive: true });
+    const logFile = printLogPath();
+    const csvCopy = path.join(folder, `PrintLog_${suffix}.csv`);
+    const iniCopy = path.join(folder, "articles.ini");
+    if (fs.existsSync(logFile)) fs.copyFileSync(logFile, csvCopy);
+    if (typeof configText === "string") fs.writeFileSync(iniCopy, configText, "utf8");
+    // Create the Excel report (openpyxl tool) alongside the CSV, then clear the log.
+    if (fs.existsSync(csvCopy)) {
+      const excelExe = app.isPackaged
+        ? path.join(process.resourcesPath, "excel_report.exe")
+        : path.join(__dirname, "bin", "excel_report.exe");
+      try {
+        execFileSync(excelExe, [csvCopy, path.join(folder, `PrintReport_${suffix}.xlsx`), iniCopy], {
+          windowsHide: true,
+        });
+      } catch (err) {
+        console.error("excel report failed:", err.message);
+      }
+    }
+    if (fs.existsSync(logFile)) fs.unlinkSync(logFile); // clear the log for the next report
+    event.returnValue = folder;
+  } catch (err) {
+    console.error("report create failed:", err.message);
+    event.returnValue = null;
+  }
+});
 
 app.whenReady().then(() => {
   protocol.handle("app", handleAppRequest);

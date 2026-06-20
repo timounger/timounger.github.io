@@ -12,6 +12,8 @@ extraResources:
     to: nfc_bridge.exe
   - from: electron/bin/printer_bridge.exe
     to: printer_bridge.exe
+  - from: electron/bin/excel_report.exe
+    to: excel_report.exe
 directories:
   output: dist-app
 win:

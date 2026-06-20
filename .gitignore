@@ -7,6 +7,9 @@ CLAUDE.md
 __pycache__/
 *.pyc
 
+# Rust
+website/tools/excel-report-rs/target
+
 # website
 website/node_modules
 website/.next

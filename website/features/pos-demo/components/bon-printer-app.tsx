@@ -16,6 +16,7 @@ import { euro } from "../lib/euro";
 import { buildArticleRank, gridNumberAt, sortByGrid } from "../lib/grid-sort";
 import { multiline } from "../lib/multiline";
 import { parseArticleGrid } from "../lib/parse-articles";
+import { appendPrintLog, clearPrintLog, createReportFolder, readPrintLog } from "../lib/print-log";
 import { playSound, type SoundName } from "../lib/sound";
 import { ArticleEditor } from "./article-editor";
 import { ConfigMenu } from "./config-menu";
@@ -49,6 +50,8 @@ const PAPER_WIDTH_80 = 80;
 /** Receipt character width per paper size (matches the print bridge LINE_WIDTHS). */
 const LINE_WIDTH_58 = 34;
 const LINE_WIDTH_80 = 48;
+/** Number of columns in PrintLog.csv (Count..Printer); shorter rows are ignored. */
+const PRINT_LOG_COLUMNS = 8;
 /** Maximum length of the numeric input field. */
 const NUM_INPUT_MAX_LEN = 8;
 /** Auto theme: hour (inclusive) from which daytime/light mode starts. */
@@ -232,6 +235,33 @@ export function BonPrinterApp({
   const [cancelled, setCancelled] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [printHistory, setPrintHistory] = useState<Record<string, (OrderLine & { cancelled: boolean })[]>>({});
+  // Desktop build: load the persisted print log (PrintLog.csv next to the exe)
+  // into the history so a report ("Abrechnen") includes sales from earlier runs.
+  useEffect(() => {
+    const rows = readPrintLog();
+    const loaded: Record<string, (OrderLine & { cancelled: boolean })[]> = {};
+    for (const row of rows) {
+      if (row.length < PRINT_LOG_COLUMNS) continue;
+      const qty = parseInt(row[0], 10);
+      if (!qty || qty <= 0) continue; // skips the header and malformed rows
+      const total = parseFloat(row[4]) || 0;
+      const cashier = row[5] ?? "";
+      if (!cashier) continue;
+      // A negative total marks a cancellation (Storno); store the positive price
+      // with the cancelled flag so the report nets it out the same way.
+      (loaded[cashier] ??= []).push({
+        name: row[1] ?? "",
+        price: Math.abs(total) / qty,
+        qty,
+        taxGroup: parseInt(row[3], 10) || 1,
+        cancelled: total < 0,
+      });
+    }
+    if (Object.keys(loaded).length > 0) setPrintHistory(loaded);
+  }, []);
+  // Whether any sales have been recorded yet (drives the interim/report menu items):
+  // empty until something is printed, and emptied again once a report is created.
+  const hasSales = Object.values(printHistory).some((lines) => lines.length > 0);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   // Admin-only factory reset dialog: code entry and a wrong-code flag
@@ -537,6 +567,7 @@ export function BonPrinterApp({
     setUser(null);
     resetSession();
     setPrintHistory({});
+    clearPrintLog(); // wipe the persisted print log on factory reset (desktop build)
     setCardPayments({});
     setMarked(new Set(grid.flatMap((c) => (c?.mark ? [c.name] : []))));
     setPaperUsed(PAPER_START_M);
@@ -947,6 +978,28 @@ export function BonPrinterApp({
         }
         if (lastName) setLastBon({ name: lastName, price: lastPrice });
       }
+      {
+        // Persist the sale to PrintLog.csv next to the exe (desktop build); the
+        // report is built from it. Columns match the reference PRINT_FILE_HEADER.
+        // A cancellation (Storno) is logged with printer "None" and a negative total.
+        const logDate = formatBonDate(new Date());
+        const logRows = order.map((line) => {
+          const index = grid.findIndex((cell) => cell?.name === line.name);
+          const articleNumber = index === -1 ? 0 : gridNumberAt(index, rows, cols);
+          const total = (isCancelled ? -1 : 1) * line.price * line.qty;
+          return [
+            line.qty,
+            line.name.replace(/\n/g, " "),
+            articleNumber,
+            line.taxGroup,
+            total.toFixed(2),
+            user ?? "",
+            logDate,
+            isCancelled ? "None" : printerPort,
+          ];
+        });
+        appendPrintLog(logRows);
+      }
       showToast(t.printed);
       showStatus(`${isCancelled ? t.statusVoid : t.statusPrinted} ${user ?? ""}`);
       if (isOperator) {
@@ -1305,12 +1358,17 @@ export function BonPrinterApp({
                       {printReportActive && (
                         <button
                           type="button"
+                          disabled={!hasSales}
                           onClick={() => {
                             setReportMode(false);
                             setInterimOpen(true);
                             setPrintoutsMenuOpen(false);
                           }}
-                          className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-[#f0f0f0] dark:hover:bg-slate-700"
+                          className={`flex w-full items-center gap-2 px-3 py-1.5 text-left ${
+                            hasSales
+                              ? "hover:bg-[#f0f0f0] dark:hover:bg-slate-700"
+                              : "text-slate-400 dark:text-slate-600"
+                          }`}
                         >
                           <img src={iconSrc("status")} alt="" className="h-[18px] w-[18px]" />
                           <span>{t.interimItem}</span>
@@ -1322,12 +1380,17 @@ export function BonPrinterApp({
                             <div className="my-1 border-t border-[#e0e0e0] dark:border-slate-700" />
                             <button
                               type="button"
+                              disabled={!hasSales}
                               onClick={() => {
                                 setReportMode(true);
                                 setInterimOpen(true);
                                 setPrintoutsMenuOpen(false);
                               }}
-                              className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-[#f0f0f0] dark:hover:bg-slate-700"
+                              className={`flex w-full items-center gap-2 px-3 py-1.5 text-left ${
+                                hasSales
+                                  ? "hover:bg-[#f0f0f0] dark:hover:bg-slate-700"
+                                  : "text-slate-400 dark:text-slate-600"
+                              }`}
                             >
                               <img src={iconSrc("report")} alt="" className="h-[18px] w-[18px]" />
                               <span>{t.reportItem}</span>
@@ -1859,22 +1922,24 @@ export function BonPrinterApp({
                 </div>
               </div>
             </div>
-
-            {/* Status bar */}
-            <div className="flex select-none items-center justify-between border-t border-[#a8a8a8] bg-[#f0f0f0] px-3 py-1 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
-              <span
-                className={
-                  statusMsg && statusTone === "warn" ? "font-semibold text-orange-500 dark:text-orange-400" : undefined
-                }
-              >
-                {statusMsg ??
-                  `${t.user}: ${user ? (operatorName(user) ? `${user} (${operatorName(user)})` : user) : "None"}`}
-              </span>
-              <span>
-                {t.paperStatus}: {paperPercent}% ({paperRemaining.toFixed(2)}/{PAPER_ROLL_M.toFixed(2)} m)
-              </span>
-            </div>
           </div>
+        </div>
+
+        {/* Status bar (stays constant in fill mode, like the menu bar) */}
+        <div
+          className={`flex select-none items-center justify-between border-t border-[#a8a8a8] bg-[#f0f0f0] px-3 py-1 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 ${fillMode ? "shrink-0" : ""}`}
+        >
+          <span
+            className={
+              statusMsg && statusTone === "warn" ? "font-semibold text-orange-500 dark:text-orange-400" : undefined
+            }
+          >
+            {statusMsg ??
+              `${t.user}: ${user ? (operatorName(user) ? `${user} (${operatorName(user)})` : user) : "None"}`}
+          </span>
+          <span>
+            {t.paperStatus}: {paperPercent}% ({paperRemaining.toFixed(2)}/{PAPER_ROLL_M.toFixed(2)} m)
+          </span>
         </div>
 
         {/* Toast */}
@@ -2046,6 +2111,9 @@ export function BonPrinterApp({
                 setPrintHistory({});
                 setCardPayments({});
                 setReportMode(false);
+                // Archive the report in the output folder (copies the log + writes
+                // the article config) and clears the log (desktop build).
+                createReportFolder(articleText);
               }
             };
             return (

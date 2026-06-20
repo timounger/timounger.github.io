@@ -1,0 +1,19 @@
+[package]
+name = "excel_report"
+version = "0.1.0"
+edition = "2021"
+description = "BonPrinter Excel report generator (rust_xlsxwriter)"
+
+[[bin]]
+name = "excel_report"
+path = "src/main.rs"
+
+[dependencies]
+rust_xlsxwriter = "0.95"
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true
+codegen-units = 1
+panic = "abort"
