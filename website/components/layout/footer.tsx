@@ -24,6 +24,11 @@ export default function Footer(): ReactElement {
           <div>
             <p className={headingClass}>BonPrinter Box</p>
             <p className="mt-2">Wertmarkendrucker mieten für Events</p>
+            <p className="mt-2">
+              <Link href="/demo" className={linkClass}>
+                Live-Demo
+              </Link>
+            </p>
           </div>
           <div>
             <p className={headingClass}>Kontakt</p>
@@ -65,6 +70,11 @@ export default function Footer(): ReactElement {
               <li>
                 <Link href="/impressum" className={linkClass}>
                   Impressum
+                </Link>
+              </li>
+              <li>
+                <Link href="/datenschutz" className={linkClass}>
+                  Datenschutz
                 </Link>
               </li>
             </ul>

@@ -14,7 +14,7 @@ import ThemeToggle from "../theme/theme-toggle";
 /** Primary navigation links shown in the header (desktop and mobile menu). */
 const navLinks = [
   { href: "/#features", label: "Highlights" },
-  { href: "/demo", label: "Demo" },
+  { href: "/demo", label: "Live-Demo" },
   { href: "/#pricing", label: "Preise" },
 ];
 

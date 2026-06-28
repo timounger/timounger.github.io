@@ -1,16 +1,17 @@
 /**
- * Legal notice and privacy policy page.
+ * Legal notice (Impressum) page.
  *
  * @module
  */
 
 import type { Metadata } from "next";
+import Link from "next/link";
 import { type ReactElement } from "react";
 
-/** Page-specific metadata for the legal notice and privacy page (noindex). */
+/** Page-specific metadata for the legal notice page (noindex). */
 export const metadata: Metadata = {
-  title: "Impressum & Datenschutz",
-  description: "Anbieterkennzeichnung und Datenschutzerklärung.",
+  title: "Impressum",
+  description: "Anbieterkennzeichnung gemäß § 5 DDG.",
   alternates: { canonical: "/impressum/" },
   robots: { index: false, follow: true },
 };
@@ -23,9 +24,7 @@ export default function ImpressumPage(): ReactElement {
   return (
     <section className="py-16">
       <div className="container-page max-w-3xl">
-        <h1 className="text-4xl font-bold tracking-tight text-slate-900 sm:text-5xl dark:text-white">
-          Impressum &amp; Datenschutz
-        </h1>
+        <h1 className="text-4xl font-bold tracking-tight text-slate-900 sm:text-5xl dark:text-white">Impressum</h1>
 
         <h2 className="mt-10 text-2xl font-semibold text-slate-900 dark:text-white">
           Angaben gemäß § 5 DDG (Digitale-Dienste-Gesetz)
@@ -63,27 +62,12 @@ export default function ImpressumPage(): ReactElement {
           DE420673659
         </p>
 
-        <h2 className="mt-10 text-2xl font-semibold text-slate-900 dark:text-white">Datenschutzerklärung</h2>
+        <h2 className="mt-10 text-2xl font-semibold text-slate-900 dark:text-white">Datenschutz</h2>
         <p className="mt-4 text-slate-700 dark:text-slate-300">
-          Diese Webseite wird bei <strong>GitHub Pages</strong> gehostet. Dienstanbieter ist das amerikanische
-          Unternehmen GitHub Inc., 88 Colin P. Kelly Jr. St., San Francisco, CA 94107, USA. Beim Aufruf der Webseite
-          werden technisch notwendige Verbindungsdaten (z.B. IP-Adresse) von GitHub verarbeitet.
-        </p>
-        <p className="mt-4 text-slate-700 dark:text-slate-300">
-          Das Anfrage-Formular auf dieser Seite öffnet beim Absenden Ihr lokales E-Mail-Programm mit vorausgefüllten
-          Angaben. Es werden <strong>keine Daten an Server dieser Webseite</strong> übermittelt; Sie versenden die
-          E-Mail eigenständig über Ihren gewohnten E-Mail-Anbieter.
-        </p>
-        <p className="mt-4 text-slate-700 dark:text-slate-300">
-          Mehr über die Datenverarbeitung bei GitHub finden Sie in der{" "}
-          <a
-            href="https://docs.github.com/de/site-policy/privacy-policies"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={linkClass}
-          >
-            GitHub Privacy Policy
-          </a>
+          Informationen zur Verarbeitung personenbezogener Daten finden Sie in der{" "}
+          <Link href="/datenschutz" className={linkClass}>
+            Datenschutzerklärung
+          </Link>
           .
         </p>
       </div>

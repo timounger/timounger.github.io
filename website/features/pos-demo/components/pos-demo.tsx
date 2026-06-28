@@ -5,7 +5,7 @@
  */
 "use client";
 
-import { useCallback, useMemo, useState, type ReactElement } from "react";
+import { useCallback, useState, type ReactElement } from "react";
 import { T } from "../i18n/translations";
 import { parseArticleGrid } from "../lib/parse-articles";
 import { DEFAULT_LANG, type UserConfig } from "../types";
@@ -27,25 +27,25 @@ export interface PosDemoProps {
  * @returns the demo page element
  */
 export default function PosDemo({ articleText, users }: PosDemoProps): ReactElement {
-  const [ctx, setCtx] = useState<PosContext>({
-    loggedOut: false,
-    lang: DEFAULT_LANG,
-    demoDark: false,
-    terminalAmount: 0,
-    lastBon: null,
+  // Initial header from the build-time config; the live header (and everything
+  // else) then comes from the app via onContext, so editing it updates the bon.
+  const [ctx, setCtx] = useState<PosContext>(() => {
+    const articles = parseArticleGrid(articleText);
+    return {
+      loggedOut: false,
+      lang: DEFAULT_LANG,
+      demoDark: false,
+      terminalAmount: 0,
+      lastBon: null,
+      header1: articles.header1,
+      header2: articles.header2,
+    };
   });
   /** Receives the latest app context (login status, language, theme) from the app. */
   const handleContext = useCallback((c: PosContext) => setCtx(c), []);
 
-  const { loggedOut, lang, demoDark, terminalAmount, lastBon } = ctx;
+  const { loggedOut, lang, demoDark, terminalAmount, lastBon, header1, header2 } = ctx;
   const t = T[lang];
-
-  // Receipt header lines (from articles.ini [Header]); the name + price come from
-  // the last printed bon (nothing is shown until something has been printed).
-  const header = useMemo(() => {
-    const articles = parseArticleGrid(articleText);
-    return { header1: articles.header1, header2: articles.header2 };
-  }, [articleText]);
 
   return (
     <div className={`space-y-4 ${demoDark ? "pos-dark" : "pos-light"}`}>
@@ -53,8 +53,8 @@ export default function PosDemo({ articleText, users }: PosDemoProps): ReactElem
         lang={lang}
         terminalAmount={terminalAmount}
         showBon={lastBon !== null}
-        bonHeader1={header.header1}
-        bonHeader2={header.header2}
+        bonHeader1={header1}
+        bonHeader2={header2}
         bonName={lastBon?.name ?? ""}
         bonPrice={lastBon?.price ?? 0}
       >

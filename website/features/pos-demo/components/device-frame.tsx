@@ -530,10 +530,15 @@ export function DeviceFrame({
                         {bonHeader2 && <div className="text-[8px]">{bonHeader2}</div>}
                       </div>
                     </div>
-                    <div className="mt-2.5 overflow-hidden whitespace-nowrap text-[18px] font-bold leading-tight">
-                      {bonName}
+                    {/* Article name: thermal-printer look (monospace, dark grey) and
+                        ESC/POS double height at normal width (scaleY 2). */}
+                    <div className="my-2 whitespace-nowrap font-mono text-[13px] font-bold leading-none text-[#3d3d3d]">
+                      <span className="inline-block scale-y-[2]">{bonName}</span>
                     </div>
-                    <div className="text-right text-[11px] leading-tight">EUR {bonPrice.toFixed(2)}</div>
+                    {/* Price: same thermal font/color as the name, but normal height */}
+                    <div className="text-right font-mono text-[11px] leading-tight text-[#3d3d3d]">
+                      EUR {bonPrice.toFixed(2)}
+                    </div>
                   </div>
                 </div>
               )}

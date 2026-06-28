@@ -97,6 +97,9 @@ export interface PosContext {
   terminalAmount: number;
   /** Last printed bon (name + price) to show on the device printer; null = none yet. */
   lastBon: { name: string; price: number } | null;
+  /** Current receipt header lines (live from the edited article config). */
+  header1: string;
+  header2: string;
 }
 
 /** Props for the {@link BonPrinterApp} component. */
@@ -491,8 +494,16 @@ export function BonPrinterApp({
 
   // Report login status, language and theme to the demo page (for its explanatory text)
   useEffect(() => {
-    onContext?.({ loggedOut, lang, demoDark, terminalAmount, lastBon });
-  }, [onContext, loggedOut, lang, demoDark, terminalAmount, lastBon]);
+    onContext?.({
+      loggedOut,
+      lang,
+      demoDark,
+      terminalAmount,
+      lastBon,
+      header1: articles.header1,
+      header2: articles.header2,
+    });
+  }, [onContext, loggedOut, lang, demoDark, terminalAmount, lastBon, articles.header1, articles.header2]);
 
   const articlesTotal = order.reduce((sum, l) => sum + l.price * l.qty, 0);
   // Deposit (Pfand) lines shown after the articles, sorted by amount ascending.
