@@ -11,6 +11,7 @@ import { Calendar, CheckCircle2 } from "lucide-react";
 import { useState, type ReactElement } from "react";
 import { DayPicker, type DateRange } from "react-day-picker";
 import "react-day-picker/dist/style.css";
+import { trackGoatEvent } from "@/components/analytics/goatcounter";
 
 /** Recipient email address the prefilled inquiry is addressed to. */
 const OWNER_EMAIL = "bonprinter@gmx.de";
@@ -75,6 +76,7 @@ export default function BookingForm(): ReactElement {
       "Anfrage Wertmarkendrucker",
     )}&body=${encodeURIComponent(body)}`;
 
+    trackGoatEvent("anfrage-formular", "Anfrage abgeschickt");
     window.location.href = mailto;
     setStatus({ kind: "submitted" });
   }

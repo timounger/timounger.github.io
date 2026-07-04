@@ -4,6 +4,7 @@
  * @module
  */
 
+import GoatCounter from "@/components/analytics/goatcounter";
 import SiteChrome from "@/components/layout/site-chrome";
 import JsonLd from "@/components/seo/json-ld";
 import { ThemeProvider } from "@/components/theme/theme-provider";
@@ -93,6 +94,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }):
           <SiteChrome>{children}</SiteChrome>
         </ThemeProvider>
         <JsonLd />
+        <GoatCounter />
       </body>
     </html>
   );

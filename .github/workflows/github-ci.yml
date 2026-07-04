@@ -36,9 +36,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Skip husky git-hook setup during CI installs
+    # Skip husky git-hook setup during CI installs; pass the GoatCounter site
+    # code (repository variable) into the static build for privacy-friendly analytics.
     env:
       HUSKY: "0"
+      NEXT_PUBLIC_GOATCOUNTER: ${{ vars.NEXT_PUBLIC_GOATCOUNTER }}
     defaults:
       run:
         working-directory: ./website

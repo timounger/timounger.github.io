@@ -59,8 +59,8 @@ export default function DatenschutzPage(): ReactElement {
           Inc., 88 Colin P. Kelly Jr. St., San Francisco, CA 94107, USA. Beim Aufruf der Seite verarbeitet GitHub
           technisch notwendige Verbindungsdaten (insbesondere Ihre IP-Adresse), um die Seite ausliefern zu können.
           Rechtsgrundlage ist das berechtigte Interesse an einer sicheren und effizienten Bereitstellung der Webseite
-          (Art. 6 Abs. 1 lit. f DSGVO). Für die Übermittlung in die USA stützt sich GitHub auf
-          Standardvertragsklauseln. Weitere Informationen finden Sie in der{" "}
+          (Art. 6 Abs. 1 lit. f DSGVO). Für die Übermittlung in die USA stützt sich GitHub auf Standardvertragsklauseln.
+          Weitere Informationen finden Sie in der{" "}
           <a
             href="https://docs.github.com/de/site-policy/privacy-policies"
             target="_blank"
@@ -75,9 +75,9 @@ export default function DatenschutzPage(): ReactElement {
         <h2 className={headingClass}>3. Server-Logfiles</h2>
         <p className={textClass}>
           Der Hosting-Anbieter erhebt und speichert automatisch Informationen in Server-Logfiles, die Ihr Browser
-          übermittelt (z.&nbsp;B. IP-Adresse, Datum und Uhrzeit des Zugriffs, angeforderte Datei, Referrer,
-          Browsertyp). Diese Daten dienen ausschließlich dem sicheren und stabilen Betrieb der Webseite und werden nicht
-          mit anderen Datenquellen zusammengeführt.
+          übermittelt (z.&nbsp;B. IP-Adresse, Datum und Uhrzeit des Zugriffs, angeforderte Datei, Referrer, Browsertyp).
+          Diese Daten dienen ausschließlich dem sicheren und stabilen Betrieb der Webseite und werden nicht mit anderen
+          Datenquellen zusammengeführt.
         </p>
 
         <h2 className={headingClass}>4. Kontaktaufnahme &amp; Anfrageformular</h2>
@@ -98,11 +98,27 @@ export default function DatenschutzPage(): ReactElement {
           Ihres Browsers löschen.
         </p>
 
-        <h2 className={headingClass}>6. Cookies &amp; Tracking</h2>
+        <h2 className={headingClass}>6. Reichweitenmessung (GoatCounter)</h2>
         <p className={textClass}>
-          Diese Webseite setzt <strong>keine Cookies zu Analyse- oder Marketingzwecken</strong> und verwendet{" "}
-          <strong>keine Tracking- oder Analyse-Dienste</strong>. Es findet keine Weitergabe personenbezogener Daten zu
-          Werbezwecken statt.
+          Zur anonymen Reichweitenmessung nutze ich <strong>GoatCounter</strong>. GoatCounter arbeitet{" "}
+          <strong>ohne Cookies</strong> und <strong>ohne dauerhafte Speicherung Ihrer IP-Adresse</strong>; es werden
+          lediglich anonyme Statistiken (z.&nbsp;B. aufgerufene Seiten, Referrer, Browser/Land) erhoben, die keinen
+          Rückschluss auf einzelne Personen zulassen. Ein Consent-Banner ist daher nicht erforderlich. Rechtsgrundlage
+          ist das berechtigte Interesse an einer bedarfsgerechten Gestaltung der Webseite (Art. 6 Abs. 1 lit. f DSGVO).
+          Details finden Sie in der{" "}
+          <a
+            href="https://www.goatcounter.com/help/privacy"
+            target="_blank"
+            rel="noopener noreferrer"
+            className={linkClass}
+          >
+            GoatCounter-Datenschutzerklärung
+          </a>
+          .
+        </p>
+        <p className={textClass}>
+          Darüber hinaus setzt diese Webseite <strong>keine Marketing-Cookies</strong> und gibt keine personenbezogenen
+          Daten zu Werbezwecken weiter.
         </p>
 
         <h2 className={headingClass}>7. Ihre Rechte</h2>
