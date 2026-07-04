@@ -6,7 +6,6 @@
 
 import Link from "next/link";
 import { type ReactElement } from "react";
-import ViewCounter from "@/components/analytics/view-counter";
 
 /** Shared Tailwind class string for the footer column headings. */
 const headingClass = "font-semibold text-slate-900 dark:text-white";
@@ -89,9 +88,8 @@ export default function Footer(): ReactElement {
             </ul>
           </div>
         </div>
-        <div className="mt-8 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-6 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-500">
-          <span>© {new Date().getFullYear()} Timo Unger</span>
-          <ViewCounter />
+        <div className="mt-8 border-t border-slate-200 pt-6 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-500">
+          © {new Date().getFullYear()} Timo Unger
         </div>
       </div>
     </footer>

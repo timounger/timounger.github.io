@@ -18,8 +18,14 @@ const TOTAL_PATH = "TOTAL";
 /** URL query parameter that reveals the counter (owner-only). */
 const STATS_PARAM = "stats";
 
+/** Props for {@link ViewCounter}. */
+interface ViewCounterProps {
+  /** Optional CSS classes for the count label. */
+  className?: string;
+}
+
 /** Shows the total site page-view count (only with "?stats" in the URL). */
-export default function ViewCounter(): ReactElement | null {
+export default function ViewCounter({ className }: ViewCounterProps): ReactElement | null {
   const [count, setCount] = useState<string | null>(null);
 
   useEffect(() => {
@@ -39,5 +45,5 @@ export default function ViewCounter(): ReactElement | null {
   }, []);
 
   if (!CODE || !count) return null;
-  return <span>{count} Seitenaufrufe</span>;
+  return <span className={className}>{count} Seitenaufrufe</span>;
 }

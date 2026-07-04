@@ -10,6 +10,7 @@ import Image from "next/image";
 import { useState, type ReactElement } from "react";
 import { Menu, X } from "lucide-react";
 import ThemeToggle from "../theme/theme-toggle";
+import ViewCounter from "../analytics/view-counter";
 
 /** Primary navigation links shown in the header (desktop and mobile menu). */
 const navLinks = [
@@ -28,16 +29,19 @@ export default function Header(): ReactElement {
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/80 backdrop-blur dark:border-slate-800 dark:bg-slate-950/80">
       <div className="container-page flex h-28 items-center justify-between">
-        <Link href="/" className="flex items-center font-semibold" aria-label="BonPrinter Box Startseite">
-          <Image
-            src="/img/logo.svg"
-            alt="BonPrinter Box"
-            width={263}
-            height={88}
-            className="h-14 w-auto dark:brightness-0 dark:invert"
-            priority
-          />
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link href="/" className="flex items-center font-semibold" aria-label="BonPrinter Box Startseite">
+            <Image
+              src="/img/logo.svg"
+              alt="BonPrinter Box"
+              width={263}
+              height={88}
+              className="h-14 w-auto dark:brightness-0 dark:invert"
+              priority
+            />
+          </Link>
+          <ViewCounter className="text-xs text-slate-400 dark:text-slate-500" />
+        </div>
 
         <nav className="hidden items-center gap-6 md:flex">
           {navLinks.map((l) => (

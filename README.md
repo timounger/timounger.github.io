@@ -28,6 +28,39 @@ im Browser. Plattformunabhängig: im `website/`-Ordner `npm install` und `npm ru
 
 - Production: <https://timounger.github.io/>
 
+## Statistiken (GoatCounter)
+
+Datenschutzfreundliche Reichweitenmessung - cookiefrei, ohne IP-Speicherung, kein
+Consent-Banner nötig.
+
+**Werte ansehen:**
+
+- Dashboard (Login nötig): <https://timounger.goatcounter.com>
+- Direkt auf der Seite (nur für dich): <https://timounger.github.io/?stats> - zeigt
+  die Gesamt-Aufrufe oben im Header neben dem Logo. Ohne `?stats` ist der Zähler
+  unsichtbar (normale Besucher sehen nichts).
+- Als JSON abfragen (z. B. für eigene Skripte): <https://timounger.goatcounter.com/counter/TOTAL.json>
+  liefert `{"count":"…","count_unique":"…"}` für die gesamte Seite. Für eine einzelne
+  Seite den Pfad einsetzen, z. B. `…/counter/demo.json`. (Erfordert die unten genannte
+  Endpoint-Freigabe.)
+
+**Einrichten (einmalig):**
+
+1. Auf <https://www.goatcounter.com> registrieren und einen Code/Subdomain wählen
+   (aktuell: `timounger` → Dashboard `https://timounger.goatcounter.com`).
+2. Repo-Variable setzen: **Settings → Secrets and variables → Actions → Reiter
+   „Variables"** → `NEXT_PUBLIC_GOATCOUNTER` = `timounger`. Der Wert wird beim Build
+   eingebettet - nach einer Änderung neu nach `working` pushen (Deploy baut neu).
+3. Für den `?stats`-Zähler in GoatCounter **Settings → „Allow adding visitor counts
+   to your website"** aktivieren (schaltet den öffentlichen `counter`-Endpoint frei).
+
+**Was gemessen wird:** Seitenaufrufe, Herkunft (Referrer), Land, Browser/System -
+anonym, ohne Cookies. Zusätzlich das Event **„Anfrage abgeschickt"** (Buchungsformular)
+als Conversion (im Dashboard unter Events).
+
+Ohne gesetzte Variable ist das Tracking aus (z. B. lokal). Hinweise zur Verarbeitung
+stehen in der [Datenschutzerklärung](https://timounger.github.io/datenschutz).
+
 ## Nützliche Tools
 
 ### Bilder für Web komprimieren
