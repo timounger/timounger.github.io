@@ -77,6 +77,11 @@ export default function Footer(): ReactElement {
                   Datenschutz
                 </Link>
               </li>
+              <li>
+                <Link href="/widerruf" className={linkClass}>
+                  Widerrufsbelehrung
+                </Link>
+              </li>
             </ul>
             <p className={`${headingClass} mt-4`}>Über</p>
             <ul className="mt-2 space-y-1">
