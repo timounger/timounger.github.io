@@ -8,6 +8,7 @@
 import { ChevronRight, RotateCcw } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useMounted } from "@/components/util/use-mounted";
 import { LOGIN } from "../data/login";
 import { numpadCells } from "../data/numpad";
 import { T } from "../i18n/translations";
@@ -152,6 +153,8 @@ export function BonPrinterApp({
   const [articleEditorOpen, setArticleEditorOpen] = useState(false);
   useEffect(() => {
     const stored = typeof window !== "undefined" ? window.bonprinterSettings?.getSync("CONFIGURATION", "ITEMS") : null;
+    // Loaded after hydration on purpose: the static HTML has no registry access.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (stored) setArticleText(stored);
   }, []);
   /**
@@ -260,6 +263,8 @@ export function BonPrinterApp({
         cancelled: total < 0,
       });
     }
+    // Loaded after hydration on purpose: the static HTML has no file access.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (Object.keys(loaded).length > 0) setPrintHistory(loaded);
   }, []);
   // Whether any sales have been recorded yet (drives the interim/report menu items):
@@ -380,8 +385,7 @@ export function BonPrinterApp({
   // last printed bon shown on the device printer (website demo); null until printed
   const [lastBon, setLastBon] = useState<{ name: string; price: number } | null>(null);
   const { resolvedTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useMounted();
   const { minimize, close } = useWindowState();
   const [confirmClose, setConfirmClose] = useState(false);
 

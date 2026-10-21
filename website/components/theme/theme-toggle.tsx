@@ -7,7 +7,8 @@
 
 import { Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
-import { useEffect, useState, type ReactElement } from "react";
+import { type ReactElement } from "react";
+import { useMounted } from "@/components/util/use-mounted";
 
 /**
  * Button that toggles between light and dark theme. Renders a static
@@ -16,11 +17,7 @@ import { useEffect, useState, type ReactElement } from "react";
  */
 export default function ThemeToggle(): ReactElement {
   const { resolvedTheme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const mounted = useMounted();
 
   if (!mounted) {
     return (

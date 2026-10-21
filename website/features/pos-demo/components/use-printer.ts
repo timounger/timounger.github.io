@@ -11,7 +11,7 @@
  */
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { type OrderLine } from "../types";
 
 /** Reconnect delay after a closed or failed connection, in milliseconds. */
@@ -24,9 +24,10 @@ const STORAGE_KEY = "bonprinter-print";
 const OFF_VALUES = ["0", "off", "false", "no"];
 
 /**
- * Resolves the printer-bridge port. In the desktop build (forced) it is always
- * on; on the website it is opt-in via `?print` (persisted in localStorage, just
- * like the `?nfc` RFID login). `?print=off` disables it again.
+ * Resolves the printer-bridge port without side effects. In the desktop build
+ * (forced) it is always on; on the website it is opt-in via `?print` (persisted
+ * in localStorage by {@link persistPort}, just like the `?nfc` RFID login).
+ * `?print=off` disables it again.
  *
  * @param forced - desktop build: always connect
  * @returns the port to connect to, or null when printing is disabled
@@ -37,16 +38,27 @@ function resolvePort(forced: boolean): number | null {
   const params = new URLSearchParams(window.location.search);
   if (params.has("print")) {
     const value = (params.get("print") ?? "").toLowerCase();
-    if (OFF_VALUES.includes(value)) {
-      localStorage.removeItem(STORAGE_KEY);
-      return null;
-    }
-    const port = Number(value) || PRINTER_PORT;
-    localStorage.setItem(STORAGE_KEY, String(port));
-    return port;
+    return OFF_VALUES.includes(value) ? null : Number(value) || PRINTER_PORT;
   }
   const stored = localStorage.getItem(STORAGE_KEY);
   return stored === null ? null : Number(stored) || PRINTER_PORT;
+}
+
+/**
+ * Remembers the `?print` choice in localStorage, so later visits keep it
+ * without the parameter. Does nothing when the URL has no `?print`.
+ *
+ * @param port - the port resolved by {@link resolvePort}
+ */
+function persistPort(port: number | null): void {
+  if (!new URLSearchParams(window.location.search).has("print")) return;
+  if (port === null) localStorage.removeItem(STORAGE_KEY);
+  else localStorage.setItem(STORAGE_KEY, String(port));
+}
+
+/** Never notifies: the port only changes with a page reload. */
+function subscribe(): () => void {
+  return () => undefined;
 }
 
 /** Metadata sent with a print job (printed on every bon). */
@@ -89,10 +101,14 @@ export function usePrinter(enabled: boolean, comPort: string | null, paperWidth:
   const socketRef = useRef<WebSocket | null>(null);
   const portRef = useRef(comPort);
   const widthRef = useRef(paperWidth);
-  portRef.current = comPort;
-  widthRef.current = paperWidth;
   const [availablePorts, setAvailablePorts] = useState<string[]>([]);
-  const [active, setActive] = useState(false);
+  // Off during the static render and hydration, so the server HTML always matches.
+  const port = useSyncExternalStore(
+    subscribe,
+    () => resolvePort(enabled),
+    () => null,
+  );
+  const active = port !== null;
 
   /**
    * Sends a JSON message to the bridge when the socket is open.
@@ -105,8 +121,7 @@ export function usePrinter(enabled: boolean, comPort: string | null, paperWidth:
   }, []);
 
   useEffect(() => {
-    const port = resolvePort(enabled);
-    setActive(port !== null);
+    if (!enabled) persistPort(port);
     if (port === null) return undefined;
     let stopped = false;
     let timer: number | undefined;
@@ -143,13 +158,16 @@ export function usePrinter(enabled: boolean, comPort: string | null, paperWidth:
       socketRef.current?.close();
       socketRef.current = null;
     };
-  }, [enabled, send]);
+  }, [enabled, port, send]);
 
-  // Push port / paper-width changes to the bridge (a no-op while not connected).
+  // Remember port / paper width for a (re)connect and push changes to the bridge
+  // (a no-op while not connected).
   useEffect(() => {
+    portRef.current = comPort;
     send({ type: "port", port: comPort });
   }, [comPort, send]);
   useEffect(() => {
+    widthRef.current = paperWidth;
     send({ type: "width", width: paperWidth });
   }, [paperWidth, send]);
 

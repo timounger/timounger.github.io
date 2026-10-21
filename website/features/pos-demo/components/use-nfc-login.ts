@@ -58,7 +58,9 @@ export type NfcResult = "success" | "fail" | "blocked";
  */
 export function useNfcLogin(onUid: (uid: string, notify: (result: NfcResult) => void) => void): string[] {
   const callback = useRef(onUid);
-  callback.current = onUid;
+  useEffect(() => {
+    callback.current = onUid;
+  });
   const [availableReaders, setAvailableReaders] = useState<string[]>([]);
   useEffect(() => {
     const port = resolvePort();
